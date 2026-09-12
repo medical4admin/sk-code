@@ -541,8 +541,9 @@ select { cursor: pointer; }
 .ai-chat-panel { display: flex; flex-direction: column; height: 100%; background: var(--bg-base); overflow: hidden; }
 .ai-chat-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border);
-  background: var(--bg-sidebar); flex-shrink: 0;
+  padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(148,163,184,0.16);
+  background: linear-gradient(180deg, rgba(17,24,39,0.96), rgba(15,23,42,0.92));
+  flex-shrink: 0;
 }
 .ai-no-key-notice {
   margin: 0.75rem; padding: 0.75rem 1rem; border-radius: var(--radius);
@@ -652,8 +653,8 @@ select { cursor: pointer; }
 .ai-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 .ai-chat-input-area {
-  padding: 0.5rem 0.75rem; border-top: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(17,18,28,0.98), rgba(12,13,20,0.98)); flex-shrink: 0;
+  padding: 0.55rem 0.8rem 0.7rem; border-top: 1px solid rgba(148,163,184,0.14);
+  background: linear-gradient(180deg, rgba(8,10,16,0.96), rgba(10,14,22,0.98)); flex-shrink: 0;
 }
 .ai-chat-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
@@ -684,7 +685,7 @@ select { cursor: pointer; }
   width: 12px; height: 12px; border-radius: 50%; display: inline-block; position: relative; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
 }
 .ai-chat-input-surface {
-  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 28px rgba(0, 0, 0, 0.18); padding: 0.42rem; }
+  background: rgba(15,23,42,0.9); border: 1px solid rgba(148,163,184,0.18); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(148,163,184,0.08), 0 10px 24px rgba(2,6,23,0.35); padding: 0.42rem; }
 .ai-context-panel { display: grid; gap: 0.38rem; margin-bottom: 0.48rem; padding: 0.48rem 0.55rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); }
 .ai-context-panel-title { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 10px; color: var(--text-muted); }
 .ai-context-panel-title span:first-child { color: var(--text-primary); font-weight: 700; }
@@ -700,9 +701,9 @@ select { cursor: pointer; }
 }
 .ai-chat-input-row { display: flex; gap: 0.4rem; align-items: flex-end; }
 .ai-chat-input-row textarea {
-  flex: 1; resize: vertical; min-height: 76px; max-height: 240px;
-  font-size: 12px; padding: 0.65rem 0.8rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(10, 12, 18, 0.88); color: var(--text-primary); overflow-y: auto; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+  flex: 1; resize: vertical; min-height: 90px; max-height: 260px;
+  font-size: 12px; padding: 0.8rem 0.9rem; border-radius: 16px; border: 1px solid rgba(148,163,184,0.14);
+  background: rgba(9,13,20,0.9); color: var(--text-primary); overflow-y: auto; box-shadow: inset 0 1px 0 rgba(148,163,184,0.06);
 }
 .ai-provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; }
 .ai-profile-card {
@@ -712,12 +713,12 @@ select { cursor: pointer; }
 .ai-profile-card.active { border-color: rgba(96,165,250,0.5); background: rgba(96,165,250,0.08); color: var(--text-primary); }
 .ai-profile-card small { font-size: 10px; color: var(--text-muted); }
 .ai-send-btn {
-  width: 32px; height: 32px; min-width: 32px; border-radius: var(--radius-sm);
-  background: var(--accent); color: white; display: flex; align-items: center; justify-content: center;
-  transition: background var(--transition);
+  width: 36px; height: 36px; min-width: 36px; border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 18px rgba(59,130,246,0.32); transition: transform var(--transition), filter var(--transition), background var(--transition);
 }
-.ai-send-btn:hover { background: var(--accent-hover); }
-.ai-send-btn:disabled { background: var(--bg-elevated); color: var(--text-muted); }
+.ai-send-btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.ai-send-btn:disabled { background: var(--bg-elevated); color: var(--text-muted); box-shadow: none; }
 .ai-reviewed-tools { display: flex; align-items: center; gap: 0.34rem; margin-bottom: 0.42rem; color: var(--text-muted); font-size: 10px; }
 .ai-reviewed-tools span:not(:first-child) { padding: 0.14rem 0.38rem; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-elevated); }
 .ai-attachment-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.45rem; }

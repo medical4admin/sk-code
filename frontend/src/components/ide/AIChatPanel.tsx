@@ -552,7 +552,7 @@ export default function AIChatPanel() {
             <span className="ai-chat-status-pill muted">{activeProfile ? `${activeProfile.model}` : "Ready"}</span>
           </div>
           <div className="ai-chat-action-group">
-            <button type="button" className="ai-chat-mini-btn" onClick={() => setProposals((current) => current.length ? current : [])}>Review</button>
+            <button type="button" className="ai-chat-mini-btn" onClick={() => setShowSettings(true)}>Provider</button>
             <button type="button" className="ai-chat-mini-btn primary" onClick={() => setProposals((current) => current.length ? current : [])}>Allow all</button>
           </div>
         </div>

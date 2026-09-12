@@ -116,6 +116,30 @@ async function programCommand(workspacePath: string, filePath: string, language:
     return `mkdir -p /tmp/skcoder-java && javac -d /tmp/skcoder-java ${shellQuote(`/workspace/${relativePath}`)} && DISPLAY=:99 java -cp /tmp/skcoder-java ${shellQuote(mainClass)}`;
 }
 
+function parseDockerPort(stdout: string): number | null {
+    const value = (stdout || "").trim();
+    if (!value)
+        return null;
+    const match = value.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|::):\s*(\d+)/i) ?? value.match(/:(\d+)$/i);
+    const port = match?.[1] ? Number(match[1]) : NaN;
+    return Number.isSafeInteger(port) && port > 0 ? port : null;
+}
+
+async function awaitGuiPort(containerName: string) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+        const portResult = await run("docker", ["port", containerName, "6901/tcp"], 5000);
+        const parsed = parseDockerPort(portResult.stdout);
+        if (parsed)
+            return parsed;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const inspectResult = await run("docker", ["inspect", containerName, "--format", "{{json .NetworkSettings.Ports}}"], 10000);
+    const inspectPort = Number((inspectResult.stdout.match(/"6901\/tcp":\[[\s\S]*?"HostPort":"?(\d+)"?/)?.[1] ?? "0"));
+    if (Number.isSafeInteger(inspectPort) && inspectPort > 0)
+        return inspectPort;
+    return null;
+}
+
 export async function createGuiSession(deviceId: string, workspaceSessionId?: string) {
     await removeExpiredGuiSessions();
     if (await activeGuiCount() >= GUI_SESSION_MAX_COUNT)
@@ -157,19 +181,20 @@ export async function launchGuiSession(id: string, deviceId: string, workspaceAc
     const started = await run("docker", [
         "run", "-d", "--rm", "--name", containerName,
         "--label", "skcoder.gui=true", "--label", `skcoder.gui-id=${session.id}`, "--label", `skcoder.instance=${BACKEND_INSTANCE_ID}`,
-        "--network", "none", "--memory", `${GUI_SESSION_MEMORY_MB}m`, "--memory-swap", `${GUI_SESSION_MEMORY_MB}m`, "--cpus", "1", "--pids-limit", "192", "--shm-size", "256m",
+        "--memory", `${GUI_SESSION_MEMORY_MB}m`, "--memory-swap", `${GUI_SESSION_MEMORY_MB}m`, "--cpus", "1", "--pids-limit", "192", "--shm-size", "256m",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--user", "1000:1000",
         "-v", `${workspace.workspacePath}:/workspace:ro`, "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m,mode=1777", "--tmpfs", "/home/coder:rw,nosuid,size=64m,mode=1777",
-        "-p", "127.0.0.1::6901", GUI_RUNTIME_IMAGE,
+        "-p", "127.0.0.1:0:6901", GUI_RUNTIME_IMAGE,
     ], 45000);
     if (started.exitCode !== 0)
         throw new Error(started.stderr || "The GUI runtime could not start.");
-    const portResult = await run("docker", ["port", containerName, "6901/tcp"], 10000);
-    const port = Number(portResult.stdout.match(/127\.0\.0\.1:(\d+)/)?.[1]);
+    const port = await awaitGuiPort(containerName);
     if (!Number.isSafeInteger(port) || port <= 0) {
+        const logs = await run("docker", ["logs", "--tail", "200", containerName], 10000);
         await run("docker", ["rm", "-f", containerName], 10000);
-        throw new Error("The GUI runtime did not expose a local display port.");
+        throw new Error(logs.stdout || logs.stderr || "The GUI runtime did not expose a local display port.");
     }
+    session.port = port;
     const command = await programCommand(workspace.workspacePath, filePath, language);
     const launched = await run("docker", ["exec", "-d", "--user", "1000:1000", "-e", "DISPLAY=:99", "-w", "/workspace", containerName, "bash", "-lc", `${command} > /tmp/skcoder-program.log 2>&1`], 15000);
     if (launched.exitCode !== 0) {
@@ -179,7 +204,7 @@ export async function launchGuiSession(id: string, deviceId: string, workspaceAc
     session.filePath = filePath;
     session.language = language;
     session.containerName = containerName;
-    session.port = port;
+    session.port = session.port ?? port;
     session.expiresAt = Date.now() + GUI_SESSION_TTL_MS;
     await createRuntimeOperation({ id: `gui:${session.id}`, ownerId: session.id, kind: "gui", resources: [`workspace:${session.workspaceSessionId}`, `container:${containerName}`], expiresAt: session.expiresAt });
     return publicSession(session);
