@@ -47,6 +47,10 @@ const DEFAULT_SETTINGS: Settings = {
         keyStatus: "none",
         usePuter: false,
         autoContext: true,
+        profiles: [],
+        activeProfileId: "",
+        usageLimit: null,
+        usageUsed: 0,
     },
     storage: {
         workspacePath: "",

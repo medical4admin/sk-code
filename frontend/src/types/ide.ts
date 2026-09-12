@@ -35,6 +35,15 @@ export type AIChatMessage = {
 };
 export type AIProvider = "auto" | "openai" | "anthropic" | "gemini" | "groq" | "openrouter" | "compatible";
 export type AIKeyStatus = "none" | "valid" | "invalid" | "permission_denied" | "credits_exhausted" | "rate_limited" | "unsupported" | "unreachable" | "provider_error" | "configuration_error" | "checking";
+export type AIConnectionProfile = {
+    id: string;
+    label: string;
+    provider: AIProvider;
+    model: string;
+    apiKey: string;
+    endpoint: string;
+    active: boolean;
+};
 export type ActivePanel = "files" | "editor" | "terminal" | "preview" | "ai" | "settings" | "cloud" | "apk";
 export type PreviewViewport = "mobile" | "tablet" | "desktop";
 export type ContextMenuEntry = {
@@ -79,6 +88,10 @@ export type Settings = {
         keyStatus: AIKeyStatus;
         usePuter: boolean;
         autoContext: boolean;
+        profiles: AIConnectionProfile[];
+        activeProfileId: string;
+        usageLimit: number | null;
+        usageUsed: number;
     };
     storage: {
         workspacePath: string;

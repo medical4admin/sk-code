@@ -733,7 +733,7 @@ export async function installWorkspaceDependencies(id: string, manager: Dependen
     return result;
 }
 export async function runCodeInWorkspace(id: string, language: string, code: string, stdin = "") {
-    return ephemeralRunnerQueue.run(async () => {
+    return ephemeralRunnerQueue.runForUser(id, async () => {
     const session = await getWorkspaceSession(id);
     const runPath = `.skcoder-runs/${randomUUID()}`;
     const hostRunPath = resolve(session.workspacePath, runPath);
@@ -769,7 +769,7 @@ export async function runCodeInWorkspace(id: string, language: string, code: str
     });
 }
 export function runEphemeralCode(language: string, code: string, stdin = "") {
-    return ephemeralRunnerQueue.run(async () => {
+    return ephemeralRunnerQueue.runForUser("ephemeral", async () => {
     const profiles: Record<string, { filename: string; command: string }> = {
         python: { filename: "main.py", command: "python3 main.py" }, py: { filename: "main.py", command: "python3 main.py" },
         node: { filename: "main.js", command: "node main.js" }, nodejs: { filename: "main.js", command: "node main.js" }, javascript: { filename: "main.js", command: "node main.js" }, js: { filename: "main.js", command: "node main.js" }, mjs: { filename: "main.mjs", command: "node main.mjs" }, cjs: { filename: "main.cjs", command: "node main.cjs" },

@@ -17,6 +17,16 @@ export type AIModelOption = {
     family: string;
 };
 
+export type AIConnectionProfile = {
+    id: string;
+    label: string;
+    provider: AIProvider;
+    model: string;
+    apiKey: string;
+    endpoint: string;
+    active: boolean;
+};
+
 export type ProviderOption = {
     id: AIProvider;
     label: string;
@@ -132,6 +142,24 @@ export function resolveProvider(provider: AIProvider, key: string): Exclude<AIPr
 
 export function providerLabel(provider: AIProvider) {
     return PROVIDERS.find((item) => item.id === provider)?.label || "AI provider";
+}
+
+export function resolveActiveAIProfile(profiles: AIConnectionProfile[] = []): AIConnectionProfile | null {
+    if (!profiles.length)
+        return null;
+    const active = profiles.find((profile) => profile.active) || profiles[0];
+    return active ?? null;
+}
+
+export function upsertAIProfile(profiles: AIConnectionProfile[] = [], profile: AIConnectionProfile): AIConnectionProfile[] {
+    const next = profiles.map((entry) => ({ ...entry, active: entry.id === profile.id ? Boolean(profile.active) : false }));
+    const index = next.findIndex((entry) => entry.id === profile.id);
+    const prepared = { ...profile, active: profile.active || next.length === 0 || !next.some((entry) => entry.active) };
+    if (index >= 0)
+        next[index] = prepared;
+    else
+        next.push(prepared);
+    return next;
 }
 
 export function catalogModels(provider: AIProvider, customModels: string[] = []): AIModelOption[] {

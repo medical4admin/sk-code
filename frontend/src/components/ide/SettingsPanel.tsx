@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIDEStore } from "@/store/ideStore";
 import { validateGitHubToken } from "@/lib/githubClient";
-import { AEROLINK_COMPATIBLE_BASE_URL, AEROLINK_DEFAULT_MODEL, AEROLINK_MODELS, PROVIDERS, catalogModels, isAerolinkKey, providerLabel, refreshProviderModels, resolveProvider, suggestProviderForKey, validateAPIKey, type AIModelOption } from "@/lib/aiClient";
+import { AEROLINK_COMPATIBLE_BASE_URL, AEROLINK_DEFAULT_MODEL, AEROLINK_MODELS, PROVIDERS, catalogModels, isAerolinkKey, providerLabel, refreshProviderModels, resolveActiveAIProfile, resolveProvider, suggestProviderForKey, upsertAIProfile, validateAPIKey, type AIModelOption } from "@/lib/aiClient";
 import { connectPuterSession } from "@/lib/puterClient";
 import { getWorkspaceLifecycle, setWorkspaceKeepAlive, type WorkspaceLifecycle } from "@/lib/backendRunner";
 import type { AIProvider } from "@/types/ide";
@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
 ];
 export default function SettingsPanel() {
     const { settings, settingsTab, setSettingsTab, setShowSettings, updateEditorSettings, updateAISettings, updateGithubSettings, } = useIDEStore();
+    const activeProfile = resolveActiveAIProfile(settings.ai.profiles);
     const [keyInput, setKeyInput] = useState(settings.ai.apiKey);
     const [endpointInput, setEndpointInput] = useState(settings.ai.apiEndpoint);
     const [modelInput, setModelInput] = useState(settings.ai.model);
@@ -73,7 +74,18 @@ export default function SettingsPanel() {
         setConnectionDetail("");
         try {
             const result = await validateAPIKey({ key: keyInput, provider: providerInput, endpoint: endpointInput, model: modelInput });
-            updateAISettings({ apiKey: keyInput.trim(), apiEndpoint: endpointInput.trim(), model: result.model, provider: result.provider, keyStatus: result.status });
+            const profileId = settings.ai.activeProfileId || `profile-${Date.now()}`;
+            const profile = {
+                id: profileId,
+                label: `${providerLabel(result.provider)} · ${result.model}`,
+                provider: result.provider,
+                model: result.model,
+                apiKey: keyInput.trim(),
+                endpoint: endpointInput.trim(),
+                active: true,
+            };
+            const profiles = upsertAIProfile(settings.ai.profiles, profile);
+            updateAISettings({ apiKey: keyInput.trim(), apiEndpoint: endpointInput.trim(), model: result.model, provider: result.provider, keyStatus: result.status, profiles, activeProfileId: profileId, usageLimit: settings.ai.usageLimit, usageUsed: settings.ai.usageUsed });
             setProviderInput(result.provider);
             setModelInput(result.model);
             setConnectionDetail(result.detail || "");
@@ -294,13 +306,28 @@ export default function SettingsPanel() {
                     <div><strong>{providerLabel(settings.ai.provider)}</strong><span>{settings.ai.model || "Connected provider"}</span></div>
                     <button className="btn btn-secondary" onClick={() => { setKeyInput(""); setShowProviderForm(true); }}>Add new key</button>
                   </div>
+                  <div className="ai-provider-grid" style={{ marginTop: "0.75rem" }}>
+                    {(settings.ai.profiles || []).map((profile) => (
+                      <button key={profile.id} type="button" className={`ai-profile-card ${profile.id === settings.ai.activeProfileId ? "active" : ""}`} onClick={() => {
+                        updateAISettings({ apiKey: profile.apiKey, apiEndpoint: profile.endpoint, model: profile.model, provider: profile.provider, profiles: settings.ai.profiles.map((entry) => ({ ...entry, active: entry.id === profile.id })), activeProfileId: profile.id, keyStatus: "valid" });
+                        setKeyInput(profile.apiKey);
+                        setEndpointInput(profile.endpoint);
+                        setModelInput(profile.model);
+                        setProviderInput(profile.provider);
+                        setShowProviderForm(false);
+                      }}>
+                        <span>{profile.label}</span>
+                        <small>{profile.provider} · {profile.model}</small>
+                      </button>
+                    ))}
+                  </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginTop: "0.6rem" }}>
                     <span className="settings-hint" style={{ margin: 0 }}>No API key is exported with project or connector settings.</span>
                     <button className="btn btn-ghost" onClick={handleClearApiKey} style={{ fontSize: 11, padding: "0.2rem 0.45rem" }}>Remove key</button>
                   </div>
                 </div> : <div className="settings-section">
                   <div className="settings-section-title">Connect Your AI Provider</div>
-                  <div className="settings-hint" style={{ marginBottom: "0.7rem" }}>Paste one provider key. SK Coder suggests a provider from its visible format, then verifies the connection with the real provider. Your key stays in this browser until you remove it.</div>
+                  <div className="settings-hint" style={{ marginBottom: "0.7rem" }}>Paste one provider key. SK Coder suggests a provider from its visible format, then verifies the connection with the real provider. Your key stays in this browser until you remove it. You can save multiple provider profiles and switch between them instantly.</div>
                   <div className="settings-row col">
                     <label>API key</label>
                     <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", width: "100%" }}>

@@ -42,4 +42,31 @@ describe("serial task queue", () => {
         releaseSecond();
         await Promise.all([first, second]);
     });
+
+    it("keeps one active task per user while allowing other users to proceed", async () => {
+        const queue = new SerialTaskQueue(2, 4);
+        const events: string[] = [];
+        let releaseUserOne!: () => void;
+        let releaseUserTwo!: () => void;
+        const first = queue.runForUser("user-a", () => new Promise<void>((resolve) => {
+            events.push("user-a:start");
+            releaseUserOne = resolve;
+        }));
+        const second = queue.runForUser("user-a", () => new Promise<void>((resolve) => {
+            events.push("user-a:queued");
+            resolve();
+        }));
+        const third = queue.runForUser("user-b", () => new Promise<void>((resolve) => {
+            events.push("user-b:start");
+            releaseUserTwo = resolve;
+        }));
+        await Promise.resolve();
+        expect(events).toEqual(["user-a:start", "user-b:start"]);
+        releaseUserOne();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(events).toEqual(["user-a:start", "user-b:start", "user-a:queued"]);
+        releaseUserTwo();
+        await Promise.all([first, second, third]);
+    });
 });

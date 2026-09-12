@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useIDEStore } from "@/store/ideStore";
-import { sendAIMessage, buildSystemPrompt } from "@/lib/aiClient";
+import { sendAIMessage, buildSystemPrompt, resolveActiveAIProfile, providerLabel } from "@/lib/aiClient";
 import { actionLabel, buildAgentInstruction, extractAgentProposal, type AgentAction } from "@/lib/aiAgent";
 import { execute } from "@/lib/executorChain";
 import type { AIChatMessage } from "@/types/ide";
@@ -71,8 +71,10 @@ export default function AIChatPanel() {
     const stickToLatestRef = useRef(true);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const { apiKey, keyStatus, usePuter } = settings.ai;
+    const { apiKey, keyStatus, usePuter, profiles, usageLimit, usageUsed } = settings.ai;
+    const activeProfile = resolveActiveAIProfile(profiles);
     const noKey = !apiKey && !usePuter;
+    const quotaRemaining = usageLimit === null ? null : Math.max(0, usageLimit - usageUsed);
     const attachmentTargets = useMemo(() => aiAttachmentPaths
         .map((path) => flatFiles.get(path))
         .filter((node): node is NonNullable<typeof node> => Boolean(node && !isSensitiveWorkspacePath(node.path))), [aiAttachmentPaths, flatFiles]);
@@ -428,11 +430,16 @@ export default function AIChatPanel() {
       <div className="ai-chat-header">
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <div style={{ width: 22, height: 22, borderRadius: 7, display: "grid", placeItems: "center", background: "linear-gradient(135deg, rgba(167,139,250,0.3), rgba(0,122,204,0.28))", color: "#d7c7ff", flexShrink: 0 }}><AssistantMark size={13}/></div>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>SK Coder AI Assistant</span>
-          {usePuter && (<span className="badge badge-green" style={{ fontSize: 9 }}>Free via Puter</span>)}
-          {keyStatus === "valid" && (<span className="badge badge-green" style={{ fontSize: 9 }}>Active</span>)}
+          <div style={{ display: "grid", gap: 2 }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>SK Coder AI Assistant</span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{activeProfile ? `${providerLabel(activeProfile.provider)} · ${activeProfile.model}` : usePuter ? "Free Puter AI" : "Connect an API provider"}</span>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div className="ai-chat-limit-badge" title={quotaRemaining === null ? "No token limit configured" : `${quotaRemaining} tokens remaining`}>
+            <span className="ai-chat-usage-ring" style={{ background: quotaRemaining === null ? "conic-gradient(var(--text-muted) 0 100%)" : `conic-gradient(var(--accent) ${Math.min(100, Math.max(0, (quotaRemaining / Math.max(usageLimit || 1, 1)) * 100))}% , rgba(255,255,255,0.12) 0)` }} />
+            <span>{quotaRemaining === null ? "No cap" : `${quotaRemaining}`}</span>
+          </div>
           <button className="btn-icon" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }} title="AI Assistant Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3"/>
@@ -539,29 +546,41 @@ export default function AIChatPanel() {
       </div>
 
       <div className="ai-chat-input-area">
+        <div className="ai-chat-toolbar">
+          <div className="ai-chat-status-group">
+            <span className="ai-chat-status-pill active">{activeProfile ? "Connected" : usePuter ? "Puter" : "No key"}</span>
+            <span className="ai-chat-status-pill muted">{activeProfile ? `${activeProfile.model}` : "Ready"}</span>
+          </div>
+          <div className="ai-chat-action-group">
+            <button type="button" className="ai-chat-mini-btn" onClick={() => setProposals((current) => current.length ? current : [])}>Review</button>
+            <button type="button" className="ai-chat-mini-btn primary" onClick={() => setProposals((current) => current.length ? current : [])}>Allow all</button>
+          </div>
+        </div>
         {attachmentTargets.length > 0 && <div className="ai-attachment-chips" aria-label="Workspace items attached to this chat">
             <span className="ai-attachment-label">Attached</span>
             {attachmentTargets.map((target) => <span key={target.path} className="ai-attachment-chip" title={target.path}>{target.type === "folder" ? "Folder · " : ""}{target.path === "/" ? "Workspace" : target.name}<button type="button" onClick={() => removeAttachment(target.path)} aria-label={`Remove ${target.path}`}>×</button></span>)}
           </div>}
-        <div className="ai-chat-input-row">
-          <div className="ai-attach-wrap">
-            <button className="ai-attach-btn" type="button" onClick={openAttachmentPicker} title="Add workspace file or folder" aria-label="Add workspace file or folder">+</button>
-            {showAttachmentPicker && <div className="ai-attach-menu ai-workspace-picker" role="dialog" aria-label="Add workspace context">
-              <div className="ai-picker-header"><strong>Add from workspace</strong><button type="button" onClick={() => setShowAttachmentPicker(false)} aria-label="Close attachment picker">×</button></div>
-              <div className="ai-picker-path"><button type="button" onClick={() => setAttachmentFolderPath("/")}>Workspace</button>{attachmentFolderPath !== "/" && <><span>/</span><button type="button" onClick={() => setAttachmentFolderPath(attachmentFolderPath.slice(0, attachmentFolderPath.lastIndexOf("/")) || "/")}>Up</button></>}</div>
-              {attachmentFolderPath !== "/" && <button type="button" className="ai-picker-select-folder" onClick={() => { attachWorkspaceTarget(attachmentFolderPath); setShowAttachmentPicker(false); }}><strong>Select this folder</strong><span>Attach its readable files as context</span></button>}
-              <div className="ai-picker-list">
-                {attachmentPickerItems.length === 0 ? <div className="ai-picker-empty">This folder is empty.</div> : attachmentPickerItems.map((node) => node.type === "folder" ? <button key={node.path} type="button" className="ai-picker-row ai-picker-folder" onClick={() => openAttachmentFolder(node.path)} onDoubleClick={() => { attachWorkspaceTarget(node.path); setShowAttachmentPicker(false); }} title="Single-click to open. Double-click to select this folder."><span>▸</span><strong>{node.name}</strong><small>Folder</small></button> : <button key={node.path} type="button" className="ai-picker-row" onClick={() => { attachWorkspaceTarget(node.path); setShowAttachmentPicker(false); }}><span>•</span><strong>{node.name}</strong><small>File</small></button>)}
-              </div>
-            </div>}
+        <div className="ai-chat-input-surface">
+          <div className="ai-chat-input-row">
+            <div className="ai-attach-wrap">
+              <button className="ai-attach-btn" type="button" onClick={openAttachmentPicker} title="Add workspace file or folder" aria-label="Add workspace file or folder">+</button>
+              {showAttachmentPicker && <div className="ai-attach-menu ai-workspace-picker" role="dialog" aria-label="Add workspace context">
+                <div className="ai-picker-header"><strong>Add from workspace</strong><button type="button" onClick={() => setShowAttachmentPicker(false)} aria-label="Close attachment picker">×</button></div>
+                <div className="ai-picker-path"><button type="button" onClick={() => setAttachmentFolderPath("/")}>Workspace</button>{attachmentFolderPath !== "/" && <><span>/</span><button type="button" onClick={() => setAttachmentFolderPath(attachmentFolderPath.slice(0, attachmentFolderPath.lastIndexOf("/")) || "/")}>Up</button></>}</div>
+                {attachmentFolderPath !== "/" && <button type="button" className="ai-picker-select-folder" onClick={() => { attachWorkspaceTarget(attachmentFolderPath); setShowAttachmentPicker(false); }}><strong>Select this folder</strong><span>Attach its readable files as context</span></button>}
+                <div className="ai-picker-list">
+                  {attachmentPickerItems.length === 0 ? <div className="ai-picker-empty">This folder is empty.</div> : attachmentPickerItems.map((node) => node.type === "folder" ? <button key={node.path} type="button" className="ai-picker-row ai-picker-folder" onClick={() => openAttachmentFolder(node.path)} onDoubleClick={() => { attachWorkspaceTarget(node.path); setShowAttachmentPicker(false); }} title="Single-click to open. Double-click to select this folder."><span>▸</span><strong>{node.name}</strong><small>Folder</small></button> : <button key={node.path} type="button" className="ai-picker-row" onClick={() => { attachWorkspaceTarget(node.path); setShowAttachmentPicker(false); }}><span>•</span><strong>{node.name}</strong><small>File</small></button>)}
+                </div>
+              </div>}
+            </div>
+            <textarea ref={textareaRef} value={input} onChange={handleTextareaChange} onKeyDown={handleKeyDown} placeholder={noKey ? "Connect free Puter AI or add your own key…" : "Describe the task, paste code, or request a reviewed workspace action…"} disabled={aiTyping} rows={1} aria-label="SK Coder AI Assistant message"/>
+            <button className="ai-send-btn" onClick={handleSend} disabled={!input.trim() || aiTyping} title="Send (Enter)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
           </div>
-          <textarea ref={textareaRef} value={input} onChange={handleTextareaChange} onKeyDown={handleKeyDown} placeholder={noKey ? "Connect free Puter AI or add your own key…" : "Describe the task, paste code, or request a reviewed workspace action…"} disabled={aiTyping} rows={1} aria-label="SK Coder AI Assistant message"/>
-          <button className="ai-send-btn" onClick={handleSend} disabled={!input.trim() || aiTyping} title="Send (Enter)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          </button>
         </div>
       </div>
     </div>);
