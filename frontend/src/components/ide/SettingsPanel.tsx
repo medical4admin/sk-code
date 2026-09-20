@@ -300,6 +300,20 @@ export default function SettingsPanel() {
                     {settings.ai.usePuter && <button className="btn btn-ghost" onClick={() => updateAISettings({ usePuter: false })}>Use provider key instead</button>}
                   </div>
                 </div>
+                <div className="settings-section">
+                  <div className="settings-section-title">Assistant defaults</div>
+                  <div className="settings-row col">
+                    <label>Approval mode</label>
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      {(["ask", "allow", "deny"] as const).map((mode) => (
+                        <button key={mode} type="button" className={`btn ${settings.ai.approvalMode === mode ? "btn-primary" : "btn-ghost"}`} style={{ fontSize: 11, padding: "0.35rem 0.6rem" }} onClick={() => updateAISettings({ approvalMode: mode })}>
+                          {mode === "ask" ? "Ask" : mode === "allow" ? "Allow" : "Deny"}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="settings-hint" style={{ marginTop: "0.4rem" }}>Ask shows each scoped action before it runs. Allow automatically approves and is best for trusted local work. Deny blocks actions until you review them manually.</span>
+                  </div>
+                </div>
                 {settings.ai.apiKey && !showProviderForm ? <div className="settings-section">
                   <div className="settings-section-title">Connected AI Provider</div>
                   <div className="settings-connected-provider">
@@ -385,8 +399,21 @@ export default function SettingsPanel() {
                 </div>}
 
                 <div className="settings-section">
-                  <div className="settings-section-title">MCP and external tools</div>
-                  <div className="settings-hint">MCP tools are available only through a reviewed workspace backend. SK Coder will not execute an unknown MCP link in the browser or send browser API keys or workspace files to an unreviewed endpoint. Approved tools must be installed by the workspace owner with explicit permissions and action review.</div>
+                  <div className="settings-section-title">Tools and agent permissions</div>
+                  <div className="settings-hint">Configure which actions a coding agent can propose from this workspace. Browser-side permissions are reviewed before execution, and external tools are blocked unless the workspace owner enables them.</div>
+                  <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.8rem" }}>
+                    {(settings.ai.tools || []).map((tool) => (
+                      <div key={tool.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", padding: "0.6rem 0.7rem", borderRadius: 10, border: "1px solid var(--border)", background: "rgba(15,23,42,0.2)" }}>
+                        <div style={{ display: "grid", gap: 2 }}>
+                          <strong style={{ fontSize: 12 }}>{tool.label}</strong>
+                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{tool.description}</span>
+                        </div>
+                        <button type="button" className={`btn ${tool.enabled ? "btn-primary" : "btn-ghost"}`} style={{ fontSize: 11, padding: "0.28rem 0.55rem" }} onClick={() => updateAISettings({ tools: (settings.ai.tools || []).map((entry) => entry.id === tool.id ? { ...entry, enabled: !entry.enabled } : entry) })}>
+                          {tool.enabled ? "Enabled" : "Disabled"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </>)}
 

@@ -34,6 +34,14 @@ export type AIChatMessage = {
     timestamp: number;
 };
 export type AIProvider = "auto" | "openai" | "anthropic" | "gemini" | "groq" | "openrouter" | "compatible";
+export type AIAuthorizationMode = "ask" | "allow" | "deny";
+export type AIToolDefinition = {
+    id: string;
+    label: string;
+    kind: "workspace" | "terminal" | "preview" | "github" | "mcp";
+    description: string;
+    enabled: boolean;
+};
 export type AIKeyStatus = "none" | "valid" | "invalid" | "permission_denied" | "credits_exhausted" | "rate_limited" | "unsupported" | "unreachable" | "provider_error" | "configuration_error" | "checking";
 export type AIConnectionProfile = {
     id: string;
@@ -88,6 +96,8 @@ export type Settings = {
         keyStatus: AIKeyStatus;
         usePuter: boolean;
         autoContext: boolean;
+        approvalMode: AIAuthorizationMode;
+        tools: AIToolDefinition[];
         profiles: AIConnectionProfile[];
         activeProfileId: string;
         usageLimit: number | null;

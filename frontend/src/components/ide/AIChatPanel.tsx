@@ -71,7 +71,7 @@ export default function AIChatPanel() {
     const stickToLatestRef = useRef(true);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const { apiKey, keyStatus, usePuter, profiles, usageLimit, usageUsed } = settings.ai;
+    const { apiKey, keyStatus, usePuter, profiles, usageLimit, usageUsed, approvalMode: storedApprovalMode } = settings.ai;
     const activeProfile = resolveActiveAIProfile(profiles);
     const noKey = !apiKey && !usePuter;
     const quotaRemaining = usageLimit === null ? null : Math.max(0, usageLimit - usageUsed);
@@ -126,15 +126,20 @@ export default function AIChatPanel() {
         addAIChatMessage({ role: "assistant", content: explanation || (actions.length ? "I prepared actions for your review." : reply) });
         if (actions.length) {
             const pending: AgentAction[] = [];
+            const approvalMode = storedApprovalMode;
             for (const action of actions) {
                 const command = action.type === "run" ? normalizeAIWorkspaceCommand(action.command) : null;
                 if (command && sessionApprovedCommands.has(command))
+                    void approveProposal(action);
+                else if (approvalMode === "allow")
                     void approveProposal(action);
                 else
                     pending.push(action);
             }
             if (pending.length)
                 setProposals((previous) => [...previous, ...pending]);
+            if (approvalMode === "allow" && pending.length === 0)
+                setProposals([]);
         }
     }
     async function connectFreePuter() {
@@ -172,6 +177,17 @@ export default function AIChatPanel() {
     }
     function removeProposal(id: string) {
         setProposals((previous) => previous.filter((proposal) => proposal.id !== id));
+    }
+    async function approveAllPendingProposals() {
+        if (proposals.length === 0) {
+            toast.error("There are no pending workspace actions to allow.");
+            return;
+        }
+        const pending = [...proposals];
+        setProposals([]);
+        for (const proposal of pending) {
+            await approveProposal(proposal);
+        }
     }
     function applyProposedFile(path: string, content: string) {
         const exists = getAllPaths(fileTree).includes(path);
@@ -552,8 +568,24 @@ export default function AIChatPanel() {
             <span className="ai-chat-status-pill muted">{activeProfile ? `${activeProfile.model}` : "Ready"}</span>
           </div>
           <div className="ai-chat-action-group">
-            <button type="button" className="ai-chat-mini-btn" onClick={() => setShowSettings(true)}>Provider</button>
-            <button type="button" className="ai-chat-mini-btn primary" onClick={() => setProposals((current) => current.length ? current : [])}>Allow all</button>
+            <button type="button" className="ai-chat-mini-btn" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }}>Provider</button>
+            <button type="button" className="ai-chat-mini-btn" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }}>Tools</button>
+            <button type="button" className="ai-chat-mini-btn primary" onClick={() => void approveAllPendingProposals()}>Allow all</button>
+          </div>
+        </div>
+        <div className="ai-approval-mode-row" aria-label="AI approval mode">
+          <span className="ai-approval-label">Default</span>
+          <div className="ai-approval-mode-group">
+            {(["ask", "allow", "deny"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`ai-approval-btn ${storedApprovalMode === mode ? "active" : ""}`}
+                onClick={() => updateAISettings({ approvalMode: mode })}
+              >
+                {mode === "ask" ? "Ask" : mode === "allow" ? "Allow" : "Deny"}
+              </button>
+            ))}
           </div>
         </div>
         {attachmentTargets.length > 0 && <div className="ai-attachment-chips" aria-label="Workspace items attached to this chat">
