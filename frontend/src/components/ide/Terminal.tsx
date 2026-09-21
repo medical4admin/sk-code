@@ -322,12 +322,13 @@ function loadPersistedTerminalState() {
         if (!parsed.tabs || !parsed.tabStates)
             return null;
         const allowedTypes = new Set<TermType>(["shell", "ai"]);
-        const tabs = parsed.tabs
-            .filter((tab) => allowedTypes.has(tab.type))
-            .map((tab) => ({
-            ...tab,
-            label: tab.type === "ai" ? "AI Terminal" : "SK Shell",
-        }));
+        const tabs = Array.from(new Map((parsed.tabs || [])
+            .filter((tab): tab is TabDef => Boolean(tab && typeof tab.id === "string" && typeof tab.type === "string" && allowedTypes.has(tab.type as TermType)))
+            .map((tab) => [tab.id, {
+                ...tab,
+                label: tab.type === "ai" ? "AI Terminal" : "SK Shell",
+            }]))
+            .values());
         if (!tabs.some((tab) => tab.type === "shell"))
             tabs.unshift({ id: "shell-1", type: "shell", label: "SK Shell" });
         if (!tabs.some((tab) => tab.type === "ai"))
@@ -350,12 +351,22 @@ function loadPersistedTerminalState() {
     }
 }
 function persistTerminalTabState(tabId: string, state: TabState) {
-    const persisted = JSON.parse(localStorage.getItem("sk-coder-terminal-state-v1") || "{\"tabs\":[],\"activeTab\":\"shell-1\",\"tabStates\":{}}") as { tabs?: TabDef[]; activeTab?: string; tabStates?: Record<string, TabState>; };
-    persisted.tabs ??= [{ id: "shell-1", type: "shell", label: "SK Shell" }, { id: "ai-1", type: "ai", label: "AI Terminal" }];
-    persisted.activeTab ??= tabId;
-    persisted.tabStates ??= {};
-    persisted.tabStates[tabId] = { ...state, history: state.history.slice(-200) };
-    localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify(persisted));
+    try {
+        const persisted = JSON.parse(localStorage.getItem("sk-coder-terminal-state-v1") || "{\"tabs\":[],\"activeTab\":\"shell-1\",\"tabStates\":{}}") as { tabs?: TabDef[]; activeTab?: string; tabStates?: Record<string, TabState>; };
+        persisted.tabs ??= [{ id: "shell-1", type: "shell", label: "SK Shell" }, { id: "ai-1", type: "ai", label: "AI Terminal" }];
+        persisted.activeTab ??= tabId;
+        persisted.tabStates ??= {};
+        const sanitized = { ...state, history: state.history.slice(-200) };
+        persisted.tabStates[tabId] = sanitized;
+        localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify(persisted));
+    }
+    catch {
+        try {
+            localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify({ tabs: [{ id: "shell-1", type: "shell", label: "SK Shell" }, { id: "ai-1", type: "ai", label: "AI Terminal" }], activeTab: tabId, tabStates: { [tabId]: { ...state, history: state.history.slice(-200) } } }));
+        }
+        catch {
+        }
+    }
 }
 export default function MultiTerminal() {
     const { fileTree, addFile, settings, getActiveFile, setShowSettings, setSettingsTab, terminalBridgeCmd, setTerminalBridgeCmd, setErrors, setActivePanel, setPreviewContent, setPreviewResult } = useIDEStore();

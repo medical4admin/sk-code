@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useIDEStore } from "@/store/ideStore";
+import { getQueueStatus } from "@/lib/operationQueue";
 import TopBar from "@/components/ide/TopBar";
 import BottomNav from "@/components/ide/BottomNav";
 import FileExplorer from "@/components/ide/FileExplorer";
@@ -37,6 +38,7 @@ export default function IndexPage() {
     const showSettings = useIDEStore((state) => state.showSettings);
     const setContextMenu = useIDEStore((state) => state.setContextMenu);
     const newItemType = useIDEStore((state) => state.newItemType);
+    const queueStatus = getQueueStatus();
     const combinedWorkspace = activePanel === "editor" && sidebarOpen;
     useEffect(() => {
         const preload = () => {
@@ -113,6 +115,11 @@ export default function IndexPage() {
       </div>
 
       <TransferStatusNotice />
+
+      {queueStatus.waiting && (<div style={{ position: "fixed", top: 58, left: "50%", transform: "translateX(-50%)", zIndex: 40, width: "min(560px, calc(100vw - 24px))", padding: "0.6rem 0.9rem", borderRadius: 10, border: "1px solid rgba(250, 204, 21, 0.38)", background: "rgba(24, 18, 2, 0.9)", color: "#fef3c7", boxShadow: "0 16px 32px rgba(0,0,0,0.28)", fontSize: 12, fontWeight: 600, letterSpacing: 0.1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }} aria-live="polite">
+        <span>{queueStatus.message}</span>
+        <span style={{ flexShrink: 0, borderRadius: 999, background: "rgba(250, 204, 21, 0.12)", color: "#fcd34d", padding: "0.2rem 0.45rem", fontSize: 10, fontWeight: 700 }}>Queued</span>
+      </div>)}
 
       <BottomNav />
 

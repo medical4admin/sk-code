@@ -3,7 +3,7 @@ import { useIDEStore } from "@/store/ideStore";
 import { validateGitHubToken } from "@/lib/githubClient";
 import { AEROLINK_COMPATIBLE_BASE_URL, AEROLINK_DEFAULT_MODEL, AEROLINK_MODELS, PROVIDERS, catalogModels, isAerolinkKey, providerLabel, refreshProviderModels, resolveActiveAIProfile, resolveProvider, suggestProviderForKey, upsertAIProfile, validateAPIKey, type AIModelOption } from "@/lib/aiClient";
 import { connectPuterSession } from "@/lib/puterClient";
-import { getWorkspaceLifecycle, setWorkspaceKeepAlive, type WorkspaceLifecycle } from "@/lib/backendRunner";
+import { cancelWorkspaceDelete, getWorkspaceLifecycle, scheduleWorkspaceDelete, setWorkspaceKeepAlive, type WorkspaceLifecycle } from "@/lib/backendRunner";
 import type { AIProvider } from "@/types/ide";
 import { toast } from "sonner";
 import developerPortrait from "@/assets/saqlain-developer.jpg";
@@ -218,6 +218,30 @@ export default function SettingsPanel() {
         toast.error(error instanceof Error ? error.message : "Workspace setting could not be updated.");
       }
     }
+    async function handleDeleteWorkspaceSchedule() {
+      if (!workspaceLifecycle) return;
+      const confirmed = window.confirm("Delete the private server copy? Your browser copy remains available, and the server copy stays in a four-hour undo window before final removal.");
+      if (!confirmed)
+        return;
+      try {
+        setWorkspaceLifecycle(await scheduleWorkspaceDelete(workspaceLifecycle.id));
+        toast.success("Server workspace scheduled for cleanup. You can still undo it before the four-hour window ends.");
+      }
+      catch (error) {
+        toast.error(error instanceof Error ? error.message : "Workspace deletion could not be scheduled.");
+      }
+    }
+    async function handleDeleteWorkspaceUndo() {
+      if (!workspaceLifecycle)
+        return;
+      try {
+        setWorkspaceLifecycle(await cancelWorkspaceDelete(workspaceLifecycle.id));
+        toast.success("Workspace cleanup was cancelled and the server copy is still active.");
+      }
+      catch (error) {
+        toast.error(error instanceof Error ? error.message : "Workspace cleanup could not be cancelled.");
+      }
+    }
     return (<div className="settings-overlay" onClick={() => setShowSettings(false)}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
@@ -286,6 +310,7 @@ export default function SettingsPanel() {
                   <div className="settings-row"><label>Line Numbers</label><Toggle checked={settings.editor.lineNumbers === "on"} onChange={(v) => updateEditorSettings({ lineNumbers: v ? "on" : "off" })}/></div>
                   <div className="settings-row"><label>Auto Save</label><Toggle checked={settings.editor.autoSave} onChange={(v) => updateEditorSettings({ autoSave: v })}/></div>
                   {workspaceLifecycle && <div className="settings-row"><div><label>Keep workspace active</label><div className="settings-hint">Keep the connected server workspace running during idle periods. Retention, capacity, and explicit deletion still apply.</div></div><Toggle checked={workspaceLifecycle.keepAlive} onChange={(v) => void toggleWorkspaceKeepAlive(v)}/></div>}
+                  {workspaceLifecycle && (<div className="settings-row" style={{ alignItems: "center" }}><div><label>Server workspace cleanup</label><div className="settings-hint">{workspaceLifecycle.state === "scheduled-delete" ? "Cleanup is pending. Undo is still available before the final removal window ends." : "Delete the private server copy without removing your browser project."}</div></div>{workspaceLifecycle.state === "scheduled-delete" ? <button type="button" className="btn btn-ghost" onClick={() => void handleDeleteWorkspaceUndo()} style={{ fontSize: 11, padding: "0.24rem 0.55rem" }}>Undo delete</button> : <button type="button" className="btn btn-ghost" onClick={() => void handleDeleteWorkspaceSchedule()} style={{ fontSize: 11, padding: "0.24rem 0.55rem" }}>Delete server copy</button>}</div>)}
                   <div className="settings-row"><label>Bracket Colors</label><Toggle checked={settings.editor.bracketPairs} onChange={(v) => updateEditorSettings({ bracketPairs: v })}/></div>
                   <div className="settings-row"><label>Smooth Scroll</label><Toggle checked={settings.editor.smoothScrolling} onChange={(v) => updateEditorSettings({ smoothScrolling: v })}/></div>
                 </div>
