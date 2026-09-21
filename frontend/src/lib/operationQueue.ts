@@ -50,6 +50,27 @@ export function getQueuedOperations(): QueuedOperation[] {
   }
 }
 
+export function getQueueStatus() {
+  const queued = getQueuedOperations();
+  if (queued.length === 0) {
+    return {
+      queued: 0,
+      waiting: false,
+      message: "There are no queued workspace operations right now.",
+    };
+  }
+  const oldestQueuedAt = queued.reduce((lowest, item) => Math.min(lowest, item.queuedAt), queued[0].queuedAt);
+  const message = queued.length === 1
+    ? "1 queued workspace action is waiting for available capacity."
+    : `${queued.length} queued workspace actions are waiting for available capacity.`;
+  return {
+    queued: queued.length,
+    waiting: true,
+    oldestQueuedAt,
+    message,
+  };
+}
+
 export function clearQueuedOperations() {
   const storage = getStorage();
   if (storage) storage.removeItem(QUEUE_STORAGE_KEY);

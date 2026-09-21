@@ -11,6 +11,7 @@ import { isSensitiveProjectPath as isSensitiveMapPath } from "@/lib/projectMap";
 import { connectPuterSession, sendPuterChat } from "@/lib/puterClient";
 import { normalizeAIWorkspaceCommand } from "@/lib/aiWorkspaceCommand";
 import { retryHistoryForAssistant } from "@/lib/aiChatRetry";
+import { shouldAutoApproveAction } from "@/lib/aiToolPolicy";
 function getAllPaths(nodes: ReturnType<typeof useIDEStore.getState>["fileTree"]): string[] {
     const paths: string[] = [];
     function walk(ns: typeof nodes) {
@@ -131,7 +132,7 @@ export default function AIChatPanel() {
                 const command = action.type === "run" ? normalizeAIWorkspaceCommand(action.command) : null;
                 if (command && sessionApprovedCommands.has(command))
                     void approveProposal(action);
-                else if (approvalMode === "allow")
+                else if (shouldAutoApproveAction(action, approvalMode, settings.ai.tools))
                     void approveProposal(action);
                 else
                     pending.push(action);
@@ -186,7 +187,10 @@ export default function AIChatPanel() {
         const pending = [...proposals];
         setProposals([]);
         for (const proposal of pending) {
-            await approveProposal(proposal);
+            if (shouldAutoApproveAction(proposal, "allow", settings.ai.tools))
+                await approveProposal(proposal);
+            else
+                setProposals((previous) => [...previous, proposal]);
         }
     }
     function applyProposedFile(path: string, content: string) {

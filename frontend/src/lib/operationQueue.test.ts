@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearQueuedOperations, drainQueuedOperations, enqueueQueuedOperation, shouldQueueOperation } from "./operationQueue";
+import { clearQueuedOperations, drainQueuedOperations, enqueueQueuedOperation, getQueueStatus, shouldQueueOperation } from "./operationQueue";
 
 const memory = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", {
@@ -53,5 +53,22 @@ describe("operation queue", () => {
 
     expect(calls).toEqual(["/execute", "/execute/sessions/demo"]);
     expect(JSON.parse(localStorage.getItem("sk-coder-queued-operations-v1") ?? "[]")).toEqual([]);
+  });
+
+  it("reports the queued waiting state for users", () => {
+    enqueueQueuedOperation("workspaceRequest", {
+      path: "/execute/sessions/demo",
+      method: "GET",
+    });
+    enqueueQueuedOperation("workspaceRequest", {
+      path: "/execute/sessions/demo/heartbeat",
+      method: "POST",
+      body: { keepAlive: true },
+    });
+
+    expect(getQueueStatus()).toMatchObject({
+      queued: 2,
+      message: expect.stringMatching(/queued|waiting|busy/i),
+    });
   });
 });

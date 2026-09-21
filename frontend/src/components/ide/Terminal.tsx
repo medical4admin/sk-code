@@ -14,6 +14,7 @@ import { shouldClearPendingCommand } from "@/lib/terminalCommandRecovery";
 import { extractAIWorkspaceCommand } from "@/lib/aiWorkspaceCommand";
 import { needsWorkspaceStage, planWorkspaceDelta, workspaceTreeRevision } from "@/lib/workspaceConnection";
 import { isSameWorkspaceStagingFlight, type WorkspaceStagingFlight } from "@/lib/workspaceStagingFlight";
+import { getQueueStatus } from "@/lib/operationQueue";
 type TermType = "shell" | "python" | "nodejs" | "java" | "ai";
 type TermLine = {
     id: string;
@@ -336,6 +337,9 @@ function loadPersistedTerminalState() {
             const stored = parsed.tabStates[tab.id];
             const state = initState(tab.type);
             state.history = Array.isArray(stored?.history) ? stored.history.slice(-200) : [];
+            state.cwd = typeof stored?.cwd === "string" ? stored.cwd : "/";
+            state.running = Boolean(stored?.running);
+            state.input = typeof stored?.input === "string" ? stored.input : "";
             tabStates[tab.id] = state;
         }
         const activeTab = tabs.some((tab) => tab.id === parsed.activeTab) ? parsed.activeTab : tabs[0].id;
@@ -344,6 +348,14 @@ function loadPersistedTerminalState() {
     catch {
         return null;
     }
+}
+function persistTerminalTabState(tabId: string, state: TabState) {
+    const persisted = JSON.parse(localStorage.getItem("sk-coder-terminal-state-v1") || "{\"tabs\":[],\"activeTab\":\"shell-1\",\"tabStates\":{}}") as { tabs?: TabDef[]; activeTab?: string; tabStates?: Record<string, TabState>; };
+    persisted.tabs ??= [{ id: "shell-1", type: "shell", label: "SK Shell" }, { id: "ai-1", type: "ai", label: "AI Terminal" }];
+    persisted.activeTab ??= tabId;
+    persisted.tabStates ??= {};
+    persisted.tabStates[tabId] = { ...state, history: state.history.slice(-200) };
+    localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify(persisted));
 }
 export default function MultiTerminal() {
     const { fileTree, addFile, settings, getActiveFile, setShowSettings, setSettingsTab, terminalBridgeCmd, setTerminalBridgeCmd, setErrors, setActivePanel, setPreviewContent, setPreviewResult } = useIDEStore();
@@ -359,6 +371,7 @@ export default function MultiTerminal() {
     const [workspaceLifecycle, setWorkspaceLifecycle] = useState<WorkspaceLifecycle | null>(null);
     const [workspaceConnection, setWorkspaceConnection] = useState<WorkspaceConnectionState>("checking");
     const [pendingAICommand, setPendingAICommand] = useState<PendingAICommand | null>(null);
+    const queueStatus = getQueueStatus();
     const addMenuRef = useRef<HTMLDivElement>(null);
     const addBtnRef = useRef<HTMLButtonElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -386,7 +399,13 @@ export default function MultiTerminal() {
     }, [tabStates, activeTab]);
     useEffect(() => {
         try {
-            localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify({ tabs, activeTab, tabStates }));
+            const persisted = { tabs, activeTab, tabStates };
+            localStorage.setItem("sk-coder-terminal-state-v1", JSON.stringify(persisted));
+            for (const tabId of Object.keys(tabStates)) {
+                const state = tabStates[tabId];
+                if (state)
+                    persistTerminalTabState(tabId, state);
+            }
         }
         catch {
         }
@@ -1267,7 +1286,7 @@ export default function MultiTerminal() {
           {workspaceConnection === "auth" && "Refreshing your workspace session…"}
           {workspaceConnection === "waiting" && "Reconnecting to your workspace…"}
           {workspaceConnection === "offline" && "Your workspace is temporarily unavailable. Your files remain safe in this browser while we retry."}
-          {workspaceConnection === "capacity" && "Your workspace is busy. We will retry automatically, and your files remain safe in this browser."}
+          {(workspaceConnection === "capacity" || queueStatus.waiting) && (queueStatus.waiting ? queueStatus.message : "Your workspace is busy. We will retry automatically, and your files remain safe in this browser.")}
         </div>)}
 
       <div className="terminal-output" ref={outputRef} onScroll={(event) => {

@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS: Settings = {
         tools: [
             { id: "workspace-read", label: "Read workspace files", kind: "workspace", description: "Read files and folders from the active project.", enabled: true },
             { id: "workspace-write", label: "Write workspace files", kind: "workspace", description: "Edit or create files inside the current workspace.", enabled: true },
-            { id: "terminal-run", label: "Run shell commands", kind: "terminal", description: "Run sandboxed workspace commands in the terminal.", enabled: true },
+            { id: "terminal-run", label: "Run shell commands", kind: "terminal", description: "Run sandboxed workspace commands in the terminal.", enabled: false },
             { id: "preview-open", label: "Open previews", kind: "preview", description: "Launch file previews or browser previews.", enabled: true },
             { id: "github-actions", label: "GitHub access", kind: "github", description: "Push, fetch, or review repository actions.", enabled: false },
             { id: "mcp-tools", label: "External MCP tools", kind: "mcp", description: "Allow configured external tool calls after review.", enabled: false },

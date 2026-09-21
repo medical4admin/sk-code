@@ -65,6 +65,12 @@ export function clearWorkspaceLease() {
     localStorage.removeItem("sk-coder-workspace-session-id");
     localStorage.removeItem("sk-coder-workspace-terminal-access");
 }
+export function shouldResetWorkspaceLease(message: string, status?: number) {
+    const normalized = message.toLowerCase();
+    const isWorkspaceError = /workspace/.test(normalized) || /session/.test(normalized) || /token/.test(normalized) || /access/.test(normalized) || /lease/.test(normalized);
+    const isUnauthorized = status === 401 || status === 403;
+    return isUnauthorized && isWorkspaceError;
+}
 function getHeaders(workspaceAccessOverride?: string) {
     const workspaceAccess = workspaceAccessOverride ?? localStorage.getItem("sk-coder-workspace-terminal-access");
     return { "Content-Type": "application/json", "X-Device-Id": getDeviceId(), ...(workspaceAccess ? { "X-SK-Workspace-Access": workspaceAccess } : {}) };
@@ -114,7 +120,7 @@ async function workspaceRequest<T>(path: string, method: "GET" | "POST" | "PUT",
         };
         if (!response.ok) {
             const message = data.error || response.statusText;
-            if (response.status === 401 || response.status === 403)
+            if (shouldResetWorkspaceLease(message, response.status))
                 clearWorkspaceLease();
             if (shouldQueueOperation(message)) {
                 enqueueQueuedOperation("workspaceRequest", { path, method, body, headers });

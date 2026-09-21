@@ -9,7 +9,7 @@ services:
     build:
       context: ./runtime-gui
       args:
-        BASE_RUNTIME_IMAGE: ${RUNTIME_IMAGE:-sk-coder-runtime:latest}
+        BASE_RUNTIME_IMAGE: ${GUI_BASE_RUNTIME_IMAGE:-node:22-bookworm-slim}
     image: ${GUI_RUNTIME_IMAGE:-sk-coder-gui:latest}
     command: ["true"]
     depends_on:
@@ -87,7 +87,7 @@ services:
       APK_JOB_MIN_RESERVATION_BYTES: ${APK_JOB_MIN_RESERVATION_BYTES:-67108864}
       APK_JOB_EXPANSION_MULTIPLIER: ${APK_JOB_EXPANSION_MULTIPLIER:-8}
       ADMIN_DASHBOARD_TOKEN: ${ADMIN_DASHBOARD_TOKEN:-}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "${BACKEND_PORT:-3001}:3001"
     volumes:
