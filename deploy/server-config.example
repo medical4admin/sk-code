@@ -1,6 +1,6 @@
 BACKEND_PORT=3001
 BACKEND_INSTANCE_ID=sk-coder-oracle
-ALLOWED_ORIGINS=https://code.yourdomain.com
+ALLOWED_ORIGINS=https://sk-coder.site,https://www.sk-coder.site,https://api.sk-coder.site
 RUNTIME_IMAGE=sk-coder-runtime:oracle-arm64
 GUI_RUNTIME_IMAGE=sk-coder-gui:oracle-arm64
 APK_RUNTIME_IMAGE=sk-coder-apk:oracle-arm64
