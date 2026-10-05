@@ -1,0 +1,205 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SK Coder API",
+    "version": "1.0.0",
+    "description": "Anonymous capability-token API contract for SK Coder workspaces and durable operations."
+  },
+  "servers": [{ "url": "/api" }],
+  "paths": {
+    "/workspaces": {
+      "post": {
+        "operationId": "createWorkspace",
+        "summary": "Create an anonymous workspace",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateWorkspaceRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Workspace created. The access token is returned only once.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceCreated" } } } },
+          "429": { "description": "Global capacity is unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/workspaces/{workspace_id}": {
+      "get": {
+        "operationId": "getWorkspace",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "responses": {
+          "200": { "description": "Workspace status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceSummary" } } } },
+          "401": { "description": "Invalid workspace capability.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWorkspace",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "responses": {
+          "202": { "description": "Workspace deletion accepted." },
+          "401": { "description": "Invalid workspace capability.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/workspaces/{workspace_id}/operations": {
+      "post": {
+        "operationId": "createOperation",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOperationRequest" } } }
+        },
+        "responses": {
+          "202": { "description": "Operation durably accepted or queued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationRecord" } } } },
+          "409": { "description": "Workspace revision or capacity conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+          "429": { "description": "Global admission or queue capacity is unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/workspaces/{workspace_id}/operations/{operation_id}": {
+      "get": {
+        "operationId": "getOperation",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/WorkspaceId" },
+          { "name": "operation_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Durable operation status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationRecord" } } } },
+          "404": { "description": "Operation not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "cancelOperation",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/WorkspaceId" },
+          { "name": "operation_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Cancellation accepted." },
+          "409": { "description": "Operation is already terminal.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "WorkspaceAccess": { "type": "apiKey", "in": "header", "name": "X-SK-Workspace-Access", "description": "High-entropy bearer capability. Never persisted in plaintext; creation returns it once." }
+    },
+    "parameters": {
+      "WorkspaceId": { "name": "workspace_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "CreateWorkspaceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "retention_seconds": { "type": ["integer", "null"], "minimum": 60 } }
+      },
+      "WorkspaceCreated": {
+        "type": "object",
+        "required": ["workspace_id", "access_token", "created_at_ms", "expires_at_ms", "state"],
+        "properties": {
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "access_token": { "type": "string", "minLength": 40, "readOnly": true },
+          "created_at_ms": { "type": "integer", "format": "int64" },
+          "expires_at_ms": { "type": "integer", "format": "int64" },
+          "state": { "$ref": "#/components/schemas/WorkspaceState" }
+        }
+      },
+      "WorkspaceSummary": {
+        "type": "object",
+        "required": ["workspace_id", "created_at_ms", "expires_at_ms", "state", "runtime_state", "revision", "bytes_used", "base_quota_bytes", "burst_quota_bytes"],
+        "properties": {
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "created_at_ms": { "type": "integer", "format": "int64" },
+          "expires_at_ms": { "type": "integer", "format": "int64" },
+          "state": { "$ref": "#/components/schemas/WorkspaceState" },
+          "runtime_state": { "$ref": "#/components/schemas/RuntimeState" },
+          "revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "bytes_used": { "type": "integer", "format": "int64", "minimum": 0 },
+          "base_quota_bytes": { "type": "integer", "format": "int64" },
+          "burst_quota_bytes": { "type": "integer", "format": "int64" },
+          "burst_expires_at_ms": { "type": ["integer", "null"], "format": "int64" }
+        }
+      },
+      "WorkspaceRecord": {
+        "type": "object",
+        "required": ["schema_version", "workspace_id", "access_token_sha256", "created_at_ms", "expires_at_ms", "state", "runtime_state", "revision", "bytes_used", "base_quota_bytes", "burst_quota_bytes"],
+        "properties": {
+          "schema_version": { "type": "integer", "minimum": 1 },
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "access_token_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "Persist only a digest, never the plaintext capability." },
+          "created_at_ms": { "type": "integer", "format": "int64" },
+          "expires_at_ms": { "type": "integer", "format": "int64" },
+          "state": { "$ref": "#/components/schemas/WorkspaceState" },
+          "runtime_state": { "$ref": "#/components/schemas/RuntimeState" },
+          "revision": { "type": "integer", "format": "int64", "minimum": 0 },
+          "bytes_used": { "type": "integer", "format": "int64", "minimum": 0 },
+          "base_quota_bytes": { "type": "integer", "format": "int64" },
+          "burst_quota_bytes": { "type": "integer", "format": "int64" },
+          "burst_expires_at_ms": { "type": ["integer", "null"], "format": "int64" }
+        }
+      },
+      "WorkspaceState": { "type": "string", "enum": ["active", "scheduled_delete", "deleted"] },
+      "RuntimeState": { "type": "string", "enum": ["suspended", "starting", "running", "failed"] },
+      "OperationKind": { "type": "string", "enum": ["terminal", "code_run", "dependency_install", "preview", "gui", "apk_inspect", "apk_decode", "apk_build"] },
+      "OperationState": { "type": "string", "enum": ["created", "queued", "starting", "running", "completing", "complete", "failed", "cancelled", "expired"] },
+      "ResourceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cpu_millis", "memory_bytes", "pids", "scratch_bytes", "timeout_ms", "output_bytes", "reservation_bytes"],
+        "properties": {
+          "cpu_millis": { "type": "integer", "minimum": 1 },
+          "memory_bytes": { "type": "integer", "minimum": 1 },
+          "pids": { "type": "integer", "minimum": 1 },
+          "scratch_bytes": { "type": "integer", "minimum": 0 },
+          "timeout_ms": { "type": "integer", "minimum": 1 },
+          "output_bytes": { "type": "integer", "minimum": 1 },
+          "reservation_bytes": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "CreateOperationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "resources"],
+        "properties": {
+          "kind": { "$ref": "#/components/schemas/OperationKind" },
+          "resources": { "$ref": "#/components/schemas/ResourceRequest" },
+          "idempotency_key": { "type": ["string", "null"], "maxLength": 128 },
+          "payload": { "type": "object", "description": "Kind-specific validated input; never an arbitrary shell command by itself." }
+        }
+      },
+      "OperationRecord": {
+        "type": "object",
+        "required": ["schema_version", "operation_id", "workspace_id", "kind", "state", "created_at_ms", "updated_at_ms", "resources"],
+        "properties": {
+          "schema_version": { "type": "integer", "minimum": 1 },
+          "operation_id": { "type": "string", "format": "uuid" },
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "kind": { "$ref": "#/components/schemas/OperationKind" },
+          "state": { "$ref": "#/components/schemas/OperationState" },
+          "created_at_ms": { "type": "integer", "format": "int64" },
+          "updated_at_ms": { "type": "integer", "format": "int64" },
+          "queue_sequence": { "type": ["integer", "null"], "minimum": 0 },
+          "progress_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+          "resources": { "$ref": "#/components/schemas/ResourceRequest" },
+          "error_code": { "type": ["string", "null"] },
+          "error_message": { "type": ["string", "null"] }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": ["code", "message", "retryable"],
+        "properties": {
+          "code": { "type": "string", "enum": ["invalid_request", "workspace_not_found", "workspace_quota_exceeded", "shared_capacity_unavailable", "host_safety_reserve", "queue_full", "operation_conflict", "unauthorized", "unsupported_capability", "internal_error"] },
+          "message": { "type": "string" },
+          "retryable": { "type": "boolean" },
+          "details": { "type": ["object", "null"] }
+        }
+      }
+    }
+  }
+}
