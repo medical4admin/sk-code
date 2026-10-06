@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chown, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, normalize, relative, resolve } from "node:path";
-import { APK_JOB_EXPANSION_MULTIPLIER, APK_JOB_MAX_COUNT, APK_JOB_MEMORY_MB, APK_JOB_MIN_RESERVATION_BYTES, APK_JOB_TIMEOUT_MS, APK_JOB_TTL_MS, APK_RUNTIME_IMAGE, BACKEND_INSTANCE_ID, STAGING_MAX_BYTES, WORKSPACE_ROOT } from "./backendConfig.js";
+import { APK_JOB_EXPANSION_MULTIPLIER, APK_JOB_MAX_COUNT, APK_JOB_MAX_RESERVATION_BYTES, APK_JOB_MEMORY_MB, APK_JOB_MIN_RESERVATION_BYTES, APK_JOB_TIMEOUT_MS, APK_JOB_TTL_MS, APK_RUNTIME_IMAGE, BACKEND_INSTANCE_ID, WORKSPACE_ROOT } from "./backendConfig.js";
 import { authorizeTerminalSession, ensureDockerReady, getWorkspaceSession } from "./sessionManager.js";
 import { beginRuntimeOperationFinalization, completeRuntimeOperationFinalization, createRuntimeOperation, failRuntimeOperationFinalization } from "./operationRegistry.js";
 
@@ -161,7 +161,7 @@ export async function createApkJob(deviceId: string, workspaceAccess: string | n
     if (relative(workspace.workspacePath, source).startsWith("..")) throw new Error("APK file path escapes the workspace.");
     const sourceInfo = await stat(source);
     if (!sourceInfo.isFile()) throw new Error("The selected APK file is not available in the workspace.");
-    const reservationBytes = Math.min(STAGING_MAX_BYTES, Math.max(APK_JOB_MIN_RESERVATION_BYTES, sourceInfo.size * APK_JOB_EXPANSION_MULTIPLIER));
+    const reservationBytes = Math.min(APK_JOB_MAX_RESERVATION_BYTES, Math.max(APK_JOB_MIN_RESERVATION_BYTES, sourceInfo.size * APK_JOB_EXPANSION_MULTIPLIER));
     const id = randomUUID();
     const jobPath = jobPathFor(id);
     await mkdir(resolve(jobPath, "input"), { recursive: true, mode: 0o755 });
