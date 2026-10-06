@@ -60,6 +60,9 @@ const DEFAULT_SETTINGS: Settings = {
         activeProfileId: "",
         usageLimit: null,
         usageUsed: 0,
+        usageInputTokens: 0,
+        usageOutputTokens: 0,
+        usageCostUsd: null,
     },
     storage: {
         workspacePath: "",
@@ -80,6 +83,7 @@ const DEFAULT_SETTINGS: Settings = {
     backend: {
         url: "",
         enabled: true,
+        allowPublicRunner: false,
     },
 };
 const FILE_CONTENT_PREFIX = "sk-file:";

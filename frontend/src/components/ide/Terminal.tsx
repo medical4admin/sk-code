@@ -14,7 +14,9 @@ import { shouldClearPendingCommand } from "@/lib/terminalCommandRecovery";
 import { extractAIWorkspaceCommand } from "@/lib/aiWorkspaceCommand";
 import { needsWorkspaceStage, planWorkspaceDelta, workspaceTreeRevision } from "@/lib/workspaceConnection";
 import { isSameWorkspaceStagingFlight, type WorkspaceStagingFlight } from "@/lib/workspaceStagingFlight";
-import { getQueueStatus } from "@/lib/operationQueue";
+import { getQueueStatus, subscribeToQueueStatus } from "@/lib/operationQueue";
+import { workspaceReconnectDelay } from "@/lib/workspaceReconnect";
+import { buildProjectMap, isSensitiveProjectPath, projectMapContext, redactContextText } from "@/lib/projectMap";
 type TermType = "shell" | "python" | "nodejs" | "java" | "ai";
 type TermLine = {
     id: string;
@@ -382,7 +384,7 @@ export default function MultiTerminal() {
     const [workspaceLifecycle, setWorkspaceLifecycle] = useState<WorkspaceLifecycle | null>(null);
     const [workspaceConnection, setWorkspaceConnection] = useState<WorkspaceConnectionState>("checking");
     const [pendingAICommand, setPendingAICommand] = useState<PendingAICommand | null>(null);
-    const queueStatus = getQueueStatus();
+    const [queueStatus, setQueueStatus] = useState(getQueueStatus);
     const addMenuRef = useRef<HTMLDivElement>(null);
     const addBtnRef = useRef<HTMLButtonElement>(null);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -458,14 +460,41 @@ export default function MultiTerminal() {
         if (reconnectTimersRef.current.has(tabId))
             return;
         const attempt = reconnectAttemptsRef.current.get(tabId) ?? 0;
-        reconnectAttemptsRef.current.set(tabId, Math.min(attempt + 1, 6));
-        const delay = Math.min(8000, 300 * 2 ** attempt) + Math.round(Math.random() * 150);
+        const delay = workspaceReconnectDelay(attempt);
+        if (delay === null) {
+            setWorkspaceConnection("offline");
+            return;
+        }
+        reconnectAttemptsRef.current.set(tabId, attempt + 1);
         const timer = window.setTimeout(() => {
             reconnectTimersRef.current.delete(tabId);
             if (shellTabIdsRef.current.has(tabId))
                 void connectShell(tabId, sessionId);
         }, delay);
         reconnectTimersRef.current.set(tabId, timer);
+    }
+    async function retryWorkspaceConnection(tabId: string) {
+        reconnectAttemptsRef.current.delete(tabId);
+        const existingTimer = reconnectTimersRef.current.get(tabId);
+        if (existingTimer !== undefined) {
+            window.clearTimeout(existingTimer);
+            reconnectTimersRef.current.delete(tabId);
+        }
+        setWorkspaceConnection("checking");
+        try {
+            if (!(await isBackendAvailable())) {
+                setWorkspaceConnection("offline");
+                return;
+            }
+            if (!(await getWorkspaceRuntimeStatus()).ready) {
+                setWorkspaceConnection("starting");
+                return;
+            }
+            await connectShell(tabId);
+        }
+        catch {
+            setWorkspaceConnection("offline");
+        }
     }
     function recoverShell(tabId: string, command?: string, preserveWorkspace = false) {
         if (command)
@@ -671,30 +700,39 @@ export default function MultiTerminal() {
         terminalSocketsRef.current.set(tabId, socket);
     }
     useEffect(() => {
+        return subscribeToQueueStatus(() => setQueueStatus(getQueueStatus()));
+    }, []);
+    useEffect(() => {
         if (!settings.backend.enabled)
             return;
         let disposed = false;
         let retry: number | undefined;
+        let attempt = 0;
         const connect = async () => {
             const available = await isBackendAvailable();
             if (disposed)
                 return;
             if (!available) {
-                setWorkspaceConnection("offline");
-                retry = window.setTimeout(() => void connect(), 2000);
+                const delay = workspaceReconnectDelay(attempt++);
+                setWorkspaceConnection(delay === null ? "offline" : "waiting");
+                if (delay !== null) retry = window.setTimeout(() => void connect(), delay);
                 return;
             }
             const status = await getWorkspaceRuntimeStatus();
             if (disposed)
                 return;
             if (!status.ready) {
-                setWorkspaceConnection("starting");
-                retry = window.setTimeout(() => void connect(), 2000);
+                const delay = workspaceReconnectDelay(attempt++);
+                setWorkspaceConnection(delay === null ? "offline" : "starting");
+                if (delay !== null) retry = window.setTimeout(() => void connect(), delay);
                 return;
             }
             await connectShell("shell-1");
-            if (!disposed && !terminalSocketsRef.current.has("shell-1"))
-                retry = window.setTimeout(() => void connect(), 2000);
+            if (!disposed && !terminalSocketsRef.current.has("shell-1")) {
+                const delay = workspaceReconnectDelay(attempt++);
+                if (delay !== null) retry = window.setTimeout(() => void connect(), delay);
+                else setWorkspaceConnection("offline");
+            }
         };
         void connect();
         return () => {
@@ -947,7 +985,7 @@ export default function MultiTerminal() {
         recoverShell(tabId);
     }
     async function handlePython(tabId: string, code: string) {
-        const res = await execute("python", code);
+        const res = await execute("python", code, { allowExternalFallback: settings.backend.allowPublicRunner });
         addLine(tabId, "info", `Runtime: ${getExecutionTierLabel(res.tier)} — ${res.capability}`);
         if (res.stdout)
             addLines(tabId, "output", res.stdout.trimEnd());
@@ -980,7 +1018,7 @@ export default function MultiTerminal() {
             addLine(tabId, "info", `Running ${filename}...`);
             execCode = node.content || "";
         }
-        const res = await execute("node", execCode);
+        const res = await execute("node", execCode, { allowExternalFallback: settings.backend.allowPublicRunner });
         addLine(tabId, "info", `Runtime: ${getExecutionTierLabel(res.tier)} — ${res.capability}`);
         if (res.stdout)
             addLines(tabId, "output", res.stdout.trimEnd());
@@ -993,7 +1031,7 @@ export default function MultiTerminal() {
         publishExecutionResult(res);
     }
     async function handleJava(tabId: string, code: string) {
-        const res = await execute("java", code);
+        const res = await execute("java", code, { allowExternalFallback: settings.backend.allowPublicRunner });
         addLine(tabId, "info", `Runtime: ${getExecutionTierLabel(res.tier)} — ${res.capability}`);
         if (res.stdout)
             addLines(tabId, "output", res.stdout.trimEnd());
@@ -1021,14 +1059,21 @@ export default function MultiTerminal() {
         });
         const activeFile = getActiveFile();
         const cwd = tabStates[tabId]?.cwd || "/";
-        const workspaceFiles = cwd === "/" ? [] : collectTextWorkspaceFiles(fileTree).filter((file) => file.path.startsWith(`${cwd}/`)).slice(0, 8);
-        const scopedActiveFile = activeFile && (cwd === "/" || activeFile.path === cwd || activeFile.path.startsWith(`${cwd}/"`.slice(0, -1))) ? activeFile : undefined;
+        const scopedActiveFile = activeFile && !isSensitiveProjectPath(activeFile.path) && (cwd === "/" || activeFile.path === cwd || activeFile.path.startsWith(`${cwd}/`)) ? activeFile : undefined;
+        const workspaceFiles = autoContext
+            ? collectTextWorkspaceFiles(fileTree)
+                .filter((file) => !isSensitiveProjectPath(file.path) && (cwd === "/" || file.path.startsWith(`${cwd}/`)))
+                .map((file) => ({ ...file, content: redactContextText(file.content) }))
+                .sort((left, right) => Number(right.path === scopedActiveFile?.path) - Number(left.path === scopedActiveFile?.path) || left.path.localeCompare(right.path))
+                .slice(0, 8)
+            : [];
         const systemPrompt = `${buildSystemPrompt({
             activeFilePath: scopedActiveFile?.path,
-            activeFileContent: autoContext ? scopedActiveFile?.content : undefined,
+            activeFileContent: autoContext && scopedActiveFile ? redactContextText(scopedActiveFile.content || "") : undefined,
             fileTree: workspaceFiles.map((file) => file.path),
             workspaceFiles,
-        })}\nIf a single workspace-scoped command would help, include it on its own line as SK_CODER_COMMAND: <command>. Do not propose sudo, Docker, OS package managers, system services, remote shell access, deployment commands, or destructive commands. The command will never execute automatically.`;
+            projectMap: autoContext ? projectMapContext(buildProjectMap(fileTree)) : undefined,
+        })}\nGive one complete, useful answer in plain language. Make reasonable assumptions instead of asking several follow-up questions; ask at most one question only when proceeding could cause data loss, expose private information, incur cost, or make the task impossible. If the user's idea will not work, explain why briefly and suggest a practical alternative. If one safe workspace command would materially help, include exactly one line as SK_CODER_COMMAND: <command>. Do not propose sudo, Docker, OS package managers, system services, remote shell access, deployment commands, or destructive commands. Commands never execute automatically.`;
         try {
             const messages: AIChatMessage[] = [{ id: "q", role: "user", content: question, timestamp: Date.now() }];
             const res = usePuter
@@ -1297,7 +1342,8 @@ export default function MultiTerminal() {
           {workspaceConnection === "auth" && "Refreshing your workspace session…"}
           {workspaceConnection === "waiting" && "Reconnecting to your workspace…"}
           {workspaceConnection === "offline" && "Your workspace is temporarily unavailable. Your files remain safe in this browser while we retry."}
-          {(workspaceConnection === "capacity" || queueStatus.waiting) && (queueStatus.waiting ? queueStatus.message : "Your workspace is busy. We will retry automatically, and your files remain safe in this browser.")}
+          {queueStatus.waiting ? queueStatus.message : workspaceConnection === "capacity" ? "Workspace capacity is currently unavailable. Your files remain safe in this browser while we retry." : null}
+                    {(workspaceConnection === "offline" || workspaceConnection === "capacity") && <button type="button" className="btn btn-ghost" onClick={() => void retryWorkspaceConnection(activeTab)}>Retry connection</button>}
         </div>)}
 
       <div className="terminal-output" ref={outputRef} onScroll={(event) => {

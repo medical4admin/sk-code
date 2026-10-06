@@ -59,7 +59,7 @@ router.post("/ai/chat", async (req: any, res) => {
         const content = j?.choices?.[0]?.message?.content || (Array.isArray(j?.content) ? j.content.map((item: { text?: string }) => item.text || "").join("") : "") || j?.content || j?.message?.content || "";
         if (!content && j?.error)
             return res.status(502).json(j);
-        res.json({ content });
+        res.json({ content, usage: j?.usage, usageMetadata: j?.usageMetadata, cost: j?.cost });
     }
     catch (e) {
         res.status(500).json({ error: String(e) });

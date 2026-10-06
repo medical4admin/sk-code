@@ -1,6 +1,6 @@
 const BASE = import.meta.env.VITE_API_URL || "/api";
 import { resolveWebSocketBase } from "./backendEndpoints";
-import { drainQueuedOperations, enqueueQueuedOperation, shouldQueueOperation } from "./operationQueue";
+import { drainQueuedOperations, enqueueQueuedOperation, isRetrySafeMethod, QueuedLocallyError, RetryableQueueError, shouldQueueOperation } from "./operationQueue";
 
 const WS_BASE = resolveWebSocketBase(BASE, import.meta.env.VITE_WS_URL);
 export interface ExecResult {
@@ -93,9 +93,15 @@ export async function isBackendAvailable(): Promise<boolean> {
                 });
                 if (!queuedResponse.ok) {
                     const errorPayload = await queuedResponse.json().catch(() => ({ error: queuedResponse.statusText })) as { error?: string };
-                    throw new Error(errorPayload.error || queuedResponse.statusText);
+                    const message = errorPayload.error || queuedResponse.statusText;
+                    if (queuedResponse.status === 408 || queuedResponse.status === 429 || queuedResponse.status >= 500 || shouldQueueOperation(message))
+                        throw new RetryableQueueError(message);
+                    throw new Error(message);
                 }
                 return queuedResponse;
+            }).catch((error) => {
+                if (error instanceof RetryableQueueError) throw error;
+                throw new RetryableQueueError(error instanceof Error ? error.message : String(error));
             });
             return true;
         }
@@ -123,8 +129,10 @@ async function workspaceRequest<T>(path: string, method: "GET" | "POST" | "PUT",
             if (shouldResetWorkspaceLease(message, response.status))
                 clearWorkspaceLease();
             if (shouldQueueOperation(message)) {
+                if (!isRetrySafeMethod(method))
+                    throw new Error("The server did not accept this change. Wait for the workspace service, then retry it manually to avoid duplicate actions.");
                 enqueueQueuedOperation("workspaceRequest", { path, method, body, headers });
-                throw new Error("The workspace request was queued because the backend is busy or temporarily unavailable. It will retry automatically when capacity is available.");
+                throw new QueuedLocallyError("This read/update is saved on this device for a limited retry. The server has not accepted it yet.");
             }
             throw new Error(message);
         }
@@ -132,9 +140,13 @@ async function workspaceRequest<T>(path: string, method: "GET" | "POST" | "PUT",
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof QueuedLocallyError)
+            throw error;
         if (shouldQueueOperation(message)) {
+            if (!isRetrySafeMethod(method))
+                throw new Error("The server may not have accepted this change. Check its state before trying it again.");
             enqueueQueuedOperation("workspaceRequest", { path, method, body, headers });
-            throw new Error("The workspace request was queued because the backend is busy or temporarily unavailable. It will retry automatically when capacity is available.");
+            throw new QueuedLocallyError("This read/update is saved on this device for a limited retry. The server has not accepted it yet.");
         }
         throw error;
     }
@@ -235,8 +247,7 @@ export async function runOnBackend(language: string, code: string, opts?: {
         if (!response.ok) {
             const message = (data && typeof data === "object" && "error" in data ? String((data as { error?: string }).error ?? response.statusText) : response.statusText);
             if (shouldQueueOperation(message)) {
-                enqueueQueuedOperation("runOnBackend", { path: "/execute", method: "POST", body: payload, headers: getHeaders() });
-                return { stdout: "", stderr: "The run was queued while the workspace service was busy. It will resume automatically when the backend is ready.", exitCode: 0, executionTime: 0, error: message };
+                return { stdout: "", stderr: "The server did not accept this run. Retry it manually when workspace capacity is available.", exitCode: 1, executionTime: 0, error: message };
             }
             return data ?? { stdout: "", stderr: message, exitCode: 1, executionTime: 0, error: message };
         }
@@ -245,8 +256,7 @@ export async function runOnBackend(language: string, code: string, opts?: {
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (shouldQueueOperation(message)) {
-            enqueueQueuedOperation("runOnBackend", { path: "/execute", method: "POST", body: payload, headers: getHeaders() });
-            return { stdout: "", stderr: "The run was queued while the workspace service was busy. It will resume automatically when the backend is ready.", exitCode: 0, executionTime: 0, error: message };
+            return { stdout: "", stderr: "The server did not accept this run. Retry it manually when workspace capacity is available.", exitCode: 1, executionTime: 0, error: message };
         }
         return { stdout: "", stderr: message, exitCode: 1, executionTime: 0, error: message };
     }

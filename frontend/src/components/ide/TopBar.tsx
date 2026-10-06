@@ -9,7 +9,7 @@ import { releasePreviousGuiSession } from "@/lib/guiSessionReplacement";
 import { toast } from "sonner";
 import { parseErrors } from "@/components/ide/ErrorPanel";
 export default function TopBar() {
-    const { isRunning, setIsRunning, fileTree, activePanel, sidebarOpen, setActivePanel, setShowSettings, getActiveFile, setPreviewContent, setPreviewPath, setErrors, setPreviewResult, setGuiDisplay, guiDisplay, } = useIDEStore();
+    const { isRunning, setIsRunning, fileTree, activePanel, sidebarOpen, setActivePanel, setShowSettings, getActiveFile, setPreviewContent, setPreviewPath, setErrors, setPreviewResult, setGuiDisplay, guiDisplay, settings } = useIDEStore();
     const activeFile = getActiveFile();
     const fileCapability = activeFile ? getFileCapability(activeFile) : "none";
     const showRunControl = activePanel === "editor" && Boolean(activeFile) && fileCapability !== "none";
@@ -38,7 +38,7 @@ export default function TopBar() {
         setIsRunning(true);
         setPreviewResult(null);
         try {
-            const result = await unifiedExecute(ext, code);
+            const result = await unifiedExecute(ext, code, { allowExternalFallback: settings.backend.allowPublicRunner });
             if (!result) {
                 setPreviewResult({
                     stdout: "",

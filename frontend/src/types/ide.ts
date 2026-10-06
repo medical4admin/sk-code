@@ -102,6 +102,9 @@ export type Settings = {
         activeProfileId: string;
         usageLimit: number | null;
         usageUsed: number;
+        usageInputTokens: number;
+        usageOutputTokens: number;
+        usageCostUsd: number | null;
     };
     storage: {
         workspacePath: string;
@@ -122,6 +125,7 @@ export type Settings = {
     backend: {
         url: string;
         enabled: boolean;
+        allowPublicRunner: boolean;
     };
 };
 export type Codespace = {

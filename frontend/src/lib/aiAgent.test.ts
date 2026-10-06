@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { extractAgentProposal } from "./aiAgent";
+import { buildAgentInstruction, extractAgentProposal } from "./aiAgent";
 
 describe("AI project proposals", () => {
+    it("defaults to complete plain-language replies without unnecessary questions", () => {
+        const instruction = buildAgentInstruction();
+        expect(instruction).toContain("Ask at most one question");
+        expect(instruction).toContain("plain language");
+        expect(instruction).toContain("reasonable conventional assumptions");
+        expect(instruction).not.toContain("Ask a question instead of guessing");
+    });
+
     it("accepts a bounded project scaffold for explicit review", () => {
         const proposal = extractAgentProposal('Plan first.<sk-actions>[{"type":"project","files":[{"path":"/package.json","content":"{}"},{"path":"/src/main.ts","content":"console.log(1)"}]}]</sk-actions>');
         expect(proposal.actions).toHaveLength(1);

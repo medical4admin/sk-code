@@ -38,7 +38,32 @@ type AIResponse = {
     content: string;
     error?: string;
     detail?: string;
+    usage?: AIUsage;
 };
+
+export type AIUsage = {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    costUsd?: number;
+};
+
+function finiteUsage(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+export function parseAIUsage(data: unknown): AIUsage | undefined {
+    if (!data || typeof data !== "object") return undefined;
+    const response = data as Record<string, any>;
+    const usage = response.usage && typeof response.usage === "object" ? response.usage : {};
+    const metadata = response.usageMetadata && typeof response.usageMetadata === "object" ? response.usageMetadata : {};
+    const inputTokens = finiteUsage(usage.prompt_tokens ?? usage.input_tokens ?? metadata.promptTokenCount);
+    const outputTokens = finiteUsage(usage.completion_tokens ?? usage.output_tokens ?? metadata.candidatesTokenCount);
+    const totalTokens = finiteUsage(usage.total_tokens ?? metadata.totalTokenCount) ?? (inputTokens !== undefined || outputTokens !== undefined ? (inputTokens || 0) + (outputTokens || 0) : undefined);
+    const costUsd = finiteUsage(usage.cost ?? usage.cost_usd ?? response.cost);
+    if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined && costUsd === undefined) return undefined;
+    return { inputTokens, outputTokens, totalTokens, costUsd };
+}
 
 export const PROVIDERS: ProviderOption[] = [
     { id: "auto", label: "Auto detect", description: "Suggest a provider from the key, then verify it with a real request." },
@@ -214,7 +239,7 @@ async function callGemini(key: string, model: string, messages: AIChatMessage[],
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) return classifyResponse(response.status, data);
-        return { content: data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "" };
+        return { content: data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "", usage: parseAIUsage(data) };
     }
     catch {
         return { content: "", error: "network_error" };
@@ -230,7 +255,7 @@ async function callAnthropic(key: string, model: string, messages: AIChatMessage
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) return classifyResponse(response.status, data);
-        return { content: Array.isArray(data?.content) ? data.content.map((item: { text?: string }) => item.text || "").join("") : "" };
+        return { content: Array.isArray(data?.content) ? data.content.map((item: { text?: string }) => item.text || "").join("") : "", usage: parseAIUsage(data) };
     }
     catch {
         return { content: "", error: "network_error" };
@@ -246,7 +271,7 @@ async function callAerolink(key: string, endpoint: string, model: string, messag
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) return classifyResponse(response.status, data);
-        return { content: Array.isArray(data?.content) ? data.content.map((item: { text?: string }) => item.text || "").join("") : "" };
+        return { content: Array.isArray(data?.content) ? data.content.map((item: { text?: string }) => item.text || "").join("") : "", usage: parseAIUsage(data) };
     }
     catch {
         return { content: "", error: "network_error" };
@@ -263,7 +288,7 @@ async function callOpenAICompatible(provider: AIProvider, key: string, endpoint:
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) return classifyResponse(response.status, data);
-        return { content: data?.choices?.[0]?.message?.content || "" };
+        return { content: data?.choices?.[0]?.message?.content || "", usage: parseAIUsage(data) };
     }
     catch {
         return { content: "", error: "network_error" };
@@ -278,7 +303,7 @@ async function callWorkspaceProxy(opts: { key: string; provider: AIProvider; end
             body: JSON.stringify({ apiKey: opts.key, provider: opts.provider, endpoint: opts.endpoint, model: opts.model, messages: opts.messages, systemPrompt: opts.systemPrompt, projectId: opts.projectId, selectedPaths: opts.selectedPaths }),
         });
         const data = await response.json().catch(() => ({}));
-        if (response.ok && data?.content) return { content: data.content };
+        if (response.ok && data?.content) return { content: data.content, usage: parseAIUsage(data) };
         if (!response.ok) return classifyResponse(response.status, data);
         return { content: "", error: "provider_error" };
     }
@@ -372,6 +397,8 @@ export function buildSystemPrompt(opts: { activeFilePath?: string; activeFileCon
     let prompt = `You are SK Coder AI, a senior development assistant for the user's current coding workspace. Help developers read the supplied workspace, write and review code, diagnose bugs, plan safe changes, test source files, and prepare preview steps across supported languages and frameworks.
 
 Guidelines:
+- Give one complete, useful answer by default. Make ordinary assumptions instead of asking the user to decide every detail; ask at most one question only when proceeding could cause data loss, expose private information, incur cost, or make the task impossible.
+- Prefer clear everyday language and explain necessary technical terms briefly. If the request has a broken assumption, say so plainly and offer a practical alternative.
 - Give concise, accurate answers with working code examples
 - Format code in markdown code blocks with language specified
 - When fixing bugs, explain what was wrong and why the fix works

@@ -26,8 +26,10 @@ export function getExecutionTierLabel(tier: ExecutionTier) {
         return "Browser Python";
     return "Unavailable";
 }
-const WANDBOX_RUN_URL = "https://wandbox.org/api/compile.json";
-const WANDBOX_CATALOG_URL = "https://wandbox.org/api/list.json";
+const WANDBOX_BASE_URL = (import.meta.env.VITE_WANDBOX_URL || "https://wandbox.org/api").replace(/\/+$/, "");
+const WANDBOX_RUN_URL = `${WANDBOX_BASE_URL}/compile.json`;
+const WANDBOX_CATALOG_URL = `${WANDBOX_BASE_URL}/list.json`;
+const WANDBOX_ENABLED = import.meta.env.VITE_ENABLE_WANDBOX !== "false";
 const CATALOG_TTL_MS = 10 * 60 * 1000;
 const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 const RUNTIME_CONFIGS: Record<string, RuntimeConfig> = {
@@ -109,6 +111,8 @@ async function getWandboxCatalog(): Promise<WandboxCompiler[]> {
 }
 async function tryWandbox(language: string, code: string, stdin = ""): Promise<ExecResponse | null> {
     try {
+        if (!WANDBOX_ENABLED)
+            return null;
         const config = RUNTIME_CONFIGS[language];
         if (!config || config.wandboxPrefixes.length === 0)
             return null;

@@ -297,7 +297,7 @@ export default function PreviewPane() {
         setPreviewResult(null);
         setResultMode("console");
         try {
-            const response = await execute(extension, activeFile.content || "", { stdin: programInput });
+            const response = await execute(extension, activeFile.content || "", { stdin: programInput, allowExternalFallback: settings.backend.allowPublicRunner });
             setPreviewResult({
                 stdout: response.stdout,
                 stderr: response.stderr,

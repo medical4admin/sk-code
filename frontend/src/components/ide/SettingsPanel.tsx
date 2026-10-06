@@ -41,7 +41,7 @@ const NAV: NavItem[] = [
     },
 ];
 export default function SettingsPanel() {
-    const { settings, settingsTab, setSettingsTab, setShowSettings, updateEditorSettings, updateAISettings, updateGithubSettings, } = useIDEStore();
+    const { settings, settingsTab, setSettingsTab, setShowSettings, updateSettings, updateEditorSettings, updateAISettings, updateGithubSettings, } = useIDEStore();
     const activeProfile = resolveActiveAIProfile(settings.ai.profiles);
     const [keyInput, setKeyInput] = useState(settings.ai.apiKey);
     const [endpointInput, setEndpointInput] = useState(settings.ai.apiEndpoint);
@@ -309,6 +309,7 @@ export default function SettingsPanel() {
                   <div className="settings-row"><label>Minimap</label><Toggle checked={settings.editor.minimap} onChange={(v) => updateEditorSettings({ minimap: v })}/></div>
                   <div className="settings-row"><label>Line Numbers</label><Toggle checked={settings.editor.lineNumbers === "on"} onChange={(v) => updateEditorSettings({ lineNumbers: v ? "on" : "off" })}/></div>
                   <div className="settings-row"><label>Auto Save</label><Toggle checked={settings.editor.autoSave} onChange={(v) => updateEditorSettings({ autoSave: v })}/></div>
+                  <div className="settings-row"><div><label>Allow free public code fallback</label><div className="settings-hint">When the private runner is unavailable, supported single files may be sent to Wandbox. Your source code and input can leave this app. Public-runner limits apply; project shells, packages, and GUI displays still require a private workspace.</div></div><Toggle checked={settings.backend.allowPublicRunner} onChange={(v) => updateSettings({ backend: { ...settings.backend, allowPublicRunner: v } })}/></div>
                   {workspaceLifecycle && <div className="settings-row"><div><label>Keep workspace active</label><div className="settings-hint">Keep the connected server workspace running during idle periods. Retention, capacity, and explicit deletion still apply.</div></div><Toggle checked={workspaceLifecycle.keepAlive} onChange={(v) => void toggleWorkspaceKeepAlive(v)}/></div>}
                   {workspaceLifecycle && (<div className="settings-row" style={{ alignItems: "center" }}><div><label>Server workspace cleanup</label><div className="settings-hint">{workspaceLifecycle.state === "scheduled-delete" ? "Cleanup is pending. Undo is still available before the final removal window ends." : "Delete the private server copy without removing your browser project."}</div></div>{workspaceLifecycle.state === "scheduled-delete" ? <button type="button" className="btn btn-ghost" onClick={() => void handleDeleteWorkspaceUndo()} style={{ fontSize: 11, padding: "0.24rem 0.55rem" }}>Undo delete</button> : <button type="button" className="btn btn-ghost" onClick={() => void handleDeleteWorkspaceSchedule()} style={{ fontSize: 11, padding: "0.24rem 0.55rem" }}>Delete server copy</button>}</div>)}
                   <div className="settings-row"><label>Bracket Colors</label><Toggle checked={settings.editor.bracketPairs} onChange={(v) => updateEditorSettings({ bracketPairs: v })}/></div>
@@ -327,6 +328,7 @@ export default function SettingsPanel() {
                 </div>
                 <div className="settings-section">
                   <div className="settings-section-title">Assistant defaults</div>
+                  <div className="settings-row"><div><label>Auto Context</label><div className="settings-hint">Include the open file and a safe project map with prompts. File contents are sent only when you send a message; likely credentials are redacted. Attach other files explicitly.</div></div><Toggle checked={settings.ai.autoContext} onChange={(v) => updateAISettings({ autoContext: v })}/></div>
                   <div className="settings-row col">
                     <label>Approval mode</label>
                     <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>

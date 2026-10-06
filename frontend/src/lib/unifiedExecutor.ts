@@ -12,11 +12,11 @@ export interface ExecutionResult {
     previewType: "html" | "text" | "code" | "json";
 }
 const SUPPORTED_EXTENSIONS = new Set(["js", "jsx", "mjs", "cjs", "ts", "tsx", "py", "python", "java", "c", "cpp", "cc", "kt", "kotlin", "rs", "rust", "go", "php", "rb", "ruby", "bash", "sh", "csharp", "cs", "scala", "sc", "swift", "perl", "pl", "lua", "pascal", "pp", "haskell", "hs", "d", "dlang", "elixir", "ex", "erlang", "erl", "ocaml", "ml", "crystal", "cr", "nim", "zig", "julia", "jl"]);
-export async function unifiedExecute(language: string, code: string): Promise<ExecutionResult | null> {
+export async function unifiedExecute(language: string, code: string, options?: { allowExternalFallback?: boolean }): Promise<ExecutionResult | null> {
     const ext = language.toLowerCase().split(".").pop() || language.toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext))
         return null;
-    const result = await execute(ext, code);
+    const result = await execute(ext, code, options);
     return {
         ...result,
         language: ext,

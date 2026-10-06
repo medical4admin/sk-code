@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -7,7 +7,8 @@ use axum::{
 };
 
 use sk_coder_contracts::{
-    ApiError, ApiErrorCode, CreateOperationRequest, CreateWorkspaceRequest,
+    ApiError, ApiErrorCode, CodeRunRequest, CreateOperationRequest, CreateWorkspaceRequest,
+    WorkspaceFileOperationRequest, WorkspaceFileRequest,
 };
 use sk_coder_server::{AppState, TerminalCommandRequest};
 
@@ -16,7 +17,10 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/workspaces", post(create_workspace))
-        .route("/api/workspaces/:workspace_id", get(get_workspace).delete(delete_workspace))
+        .route(
+            "/api/workspaces/:workspace_id",
+            get(get_workspace).delete(delete_workspace),
+        )
         .route(
             "/api/workspaces/:workspace_id/operations",
             post(create_operation),
@@ -29,14 +33,26 @@ async fn main() {
             "/api/workspaces/:workspace_id/terminal/exec",
             post(exec_workspace_command),
         )
+        .route(
+            "/api/workspaces/:workspace_id/files",
+            get(list_workspace_files)
+                .post(write_workspace_file)
+                .delete(delete_workspace_file),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/files/move",
+            post(move_workspace_file),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/code/run",
+            post(run_workspace_code),
+        )
         .with_state(AppState::new());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3030")
         .await
         .expect("bind to 0.0.0.0:3030");
-    axum::serve(listener, app)
-        .await
-        .expect("start axum server");
+    axum::serve(listener, app).await.expect("start axum server");
 }
 
 async fn health() -> impl IntoResponse {
@@ -125,6 +141,71 @@ async fn exec_workspace_command(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
     let token = workspace_access_header(&headers)?;
     match state.run_command_in_workspace(&workspace_id, &token, &request) {
+        Ok(result) => Ok((StatusCode::OK, Json(result))),
+        Err(err) => Err(error_response(&err, status_for_code(&err.code))),
+    }
+}
+
+async fn list_workspace_files(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
+    let token = workspace_access_header(&headers)?;
+    match state.list_workspace_files(&workspace_id, &token) {
+        Ok(files) => Ok((StatusCode::OK, Json(files))),
+        Err(err) => Err(error_response(&err, status_for_code(&err.code))),
+    }
+}
+
+async fn write_workspace_file(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<WorkspaceFileRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
+    let token = workspace_access_header(&headers)?;
+    match state.write_workspace_file(&workspace_id, &token, &request) {
+        Ok(file) => Ok((StatusCode::CREATED, Json(file))),
+        Err(err) => Err(error_response(&err, status_for_code(&err.code))),
+    }
+}
+
+async fn move_workspace_file(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<WorkspaceFileOperationRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
+    let token = workspace_access_header(&headers)?;
+    match state.move_workspace_file(&workspace_id, &token, &request) {
+        Ok(file) => Ok((StatusCode::OK, Json(file))),
+        Err(err) => Err(error_response(&err, status_for_code(&err.code))),
+    }
+}
+
+async fn delete_workspace_file(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    let token = workspace_access_header(&headers)?;
+    let path = query.get("path").map(String::as_str).unwrap_or("");
+    match state.delete_workspace_file(&workspace_id, &token, path) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(err) => Err(error_response(&err, status_for_code(&err.code))),
+    }
+}
+
+async fn run_workspace_code(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CodeRunRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
+    let token = workspace_access_header(&headers)?;
+    match state.run_code_in_workspace(&workspace_id, &token, &request) {
         Ok(result) => Ok((StatusCode::OK, Json(result))),
         Err(err) => Err(error_response(&err, status_for_code(&err.code))),
     }

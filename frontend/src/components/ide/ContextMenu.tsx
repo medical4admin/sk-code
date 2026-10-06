@@ -275,7 +275,7 @@ export default function ContextMenu() {
         setPreviewResult(null);
         setIsRunning(true);
         try {
-            const result = await execute(extension, node.content || "");
+            const result = await execute(extension, node.content || "", { allowExternalFallback: settings.backend.allowPublicRunner });
             setPreviewResult({
                 stdout: result.stdout,
                 stderr: result.stderr,

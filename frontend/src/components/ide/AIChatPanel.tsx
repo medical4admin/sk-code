@@ -12,6 +12,7 @@ import { connectPuterSession, sendPuterChat } from "@/lib/puterClient";
 import { normalizeAIWorkspaceCommand } from "@/lib/aiWorkspaceCommand";
 import { retryHistoryForAssistant } from "@/lib/aiChatRetry";
 import { shouldAutoApproveAction } from "@/lib/aiToolPolicy";
+import { buildProjectMap, isSensitiveProjectPath, projectMapContext, redactContextText } from "@/lib/projectMap";
 function getAllPaths(nodes: ReturnType<typeof useIDEStore.getState>["fileTree"]): string[] {
     const paths: string[] = [];
     function walk(ns: typeof nodes) {
@@ -57,7 +58,7 @@ function AssistantChart({ source }: { source: string }) {
     }
 }
 export default function AIChatPanel() {
-    const { aiChatMessages, aiChatDraft, aiAttachmentPaths, aiTyping, settings, addAIChatMessage, setAIChatDraft, setAIAttachmentPaths, clearAIChat, setAITyping, setShowSettings, setSettingsTab, updateAISettings, fileTree, flatFiles, addFile, updateFileContent, deleteNode, renameNode, moveNode, setTerminalBridgeCmd, setActivePanel, setPreviewPath, openTab, setPreviewResult, setIsRunning, } = useIDEStore();
+    const { aiChatMessages, aiChatDraft, aiAttachmentPaths, aiTyping, settings, addAIChatMessage, setAIChatDraft, setAIAttachmentPaths, clearAIChat, setAITyping, setShowSettings, setSettingsTab, updateAISettings, fileTree, flatFiles, addFile, updateFileContent, deleteNode, renameNode, moveNode, setTerminalBridgeCmd, setActivePanel, setPreviewPath, openTab, setPreviewResult, setIsRunning, getActiveFile } = useIDEStore();
     const input = aiChatDraft;
     const setInput = setAIChatDraft;
     const [proposals, setProposals] = useState<AgentAction[]>([]);
@@ -72,8 +73,9 @@ export default function AIChatPanel() {
     const stickToLatestRef = useRef(true);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const { apiKey, keyStatus, usePuter, profiles, usageLimit, usageUsed, approvalMode: storedApprovalMode } = settings.ai;
+    const { apiKey, keyStatus, usePuter, profiles, usageLimit, usageUsed, usageInputTokens, usageOutputTokens, usageCostUsd, approvalMode: storedApprovalMode } = settings.ai;
     const activeProfile = resolveActiveAIProfile(profiles);
+    const activeFile = getActiveFile();
     const noKey = !apiKey && !usePuter;
     const quotaRemaining = usageLimit === null ? null : Math.max(0, usageLimit - usageUsed);
     const attachmentTargets = useMemo(() => aiAttachmentPaths
@@ -81,6 +83,8 @@ export default function AIChatPanel() {
         .filter((node): node is NonNullable<typeof node> => Boolean(node && !isSensitiveWorkspacePath(node.path))), [aiAttachmentPaths, flatFiles]);
     const attachedContextFiles = useMemo(() => {
         const included = new Set<string>();
+        if (settings.ai.autoContext && activeFile?.type === "file" && !isSensitiveWorkspacePath(activeFile.path))
+            included.add(activeFile.path);
         for (const target of attachmentTargets) {
             if (target.type === "file") {
                 included.add(target.path);
@@ -95,8 +99,8 @@ export default function AIChatPanel() {
             .map((path) => flatFiles.get(path))
             .filter((file): file is NonNullable<typeof file> => Boolean(file && file.type === "file" && !isSensitiveWorkspacePath(file.path)))
             .sort((a, b) => a.path.localeCompare(b.path))
-            .map((file) => ({ path: file.path, content: file.content || "" }));
-    }, [attachmentTargets, flatFiles]);
+                .map((file) => ({ path: file.path, content: redactContextText(file.content || "") }));
+            }, [activeFile, attachmentTargets, flatFiles, settings.ai.autoContext]);
     const attachmentPickerItems = useMemo(() => {
         if (attachmentFolderPath === "/") return fileTree.filter((node) => !isSensitiveWorkspacePath(node.path));
         const folder = flatFiles.get(attachmentFolderPath);
@@ -319,7 +323,7 @@ export default function AIChatPanel() {
                 setPreviewResult(null);
                 setIsRunning(true);
                 try {
-                    const result = await execute(extension, sourceFile.content || "");
+                    const result = await execute(extension, sourceFile.content || "", { allowExternalFallback: settings.backend.allowPublicRunner });
                     setPreviewResult({
                         stdout: result.stdout,
                         stderr: result.stderr,
@@ -361,8 +365,11 @@ export default function AIChatPanel() {
         setAITyping(true);
         try {
             const systemPrompt = `${buildSystemPrompt({
-                    fileTree: attachedContextFiles.map((file) => file.path),
-                    workspaceFiles: attachedContextFiles,
+                    activeFilePath: settings.ai.autoContext ? activeFile?.path : undefined,
+                    activeFileContent: settings.ai.autoContext && activeFile?.type === "file" ? redactContextText(activeFile.content || "") : undefined,
+                    fileTree: settings.ai.autoContext ? getAllPaths(fileTree).filter((path) => !isSensitiveWorkspacePath(path)).slice(0, 200) : attachedContextFiles.map((file) => file.path),
+                    projectMap: settings.ai.autoContext ? projectMapContext(buildProjectMap(fileTree)) : undefined,
+                    workspaceFiles: attachedContextFiles.filter((file) => file.path !== activeFile?.path),
                 })}\n\n${buildAgentInstruction()}`;
             const conversation = buildConversationWindow(messages);
             if (usePuter) {
@@ -403,6 +410,16 @@ export default function AIChatPanel() {
                     addAIChatMessage({ role: "assistant", content: `Something went wrong: ${res.error}` });
                 }
             else {
+                if (res.usage) {
+                    const inputTokens = res.usage.inputTokens || 0;
+                    const outputTokens = res.usage.outputTokens || 0;
+                    updateAISettings({
+                        usageInputTokens: usageInputTokens + inputTokens,
+                        usageOutputTokens: usageOutputTokens + outputTokens,
+                        usageUsed: usageUsed + (res.usage.totalTokens || inputTokens + outputTokens),
+                        usageCostUsd: res.usage.costUsd === undefined ? usageCostUsd : (usageCostUsd || 0) + res.usage.costUsd,
+                    });
+                }
                 deliverAIReply(res.content);
             }
         }
@@ -446,6 +463,21 @@ export default function AIChatPanel() {
         ta.style.height = "auto";
         ta.style.height = Math.min(ta.scrollHeight, Math.max(320, window.innerHeight * 0.48)) + "px";
     }
+    function selectAIProfile(profileId: string) {
+        const profile = profiles.find((entry) => entry.id === profileId);
+        if (!profile) return;
+        updateAISettings({
+            apiKey: profile.apiKey,
+            apiEndpoint: profile.endpoint,
+            model: profile.model,
+            provider: profile.provider,
+            profiles: profiles.map((entry) => ({ ...entry, active: entry.id === profile.id })),
+            activeProfileId: profile.id,
+            keyStatus: "valid",
+            usePuter: false,
+        });
+        toast.success(`${providerLabel(profile.provider)} · ${profile.model} selected`);
+    }
     return (<div className="ai-chat-panel">
       <div className="ai-chat-header">
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -456,9 +488,10 @@ export default function AIChatPanel() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div className="ai-chat-limit-badge" title={quotaRemaining === null ? "No token limit configured" : `${quotaRemaining} tokens remaining`}>
-            <span className="ai-chat-usage-ring" style={{ background: quotaRemaining === null ? "conic-gradient(var(--text-muted) 0 100%)" : `conic-gradient(var(--accent) ${Math.min(100, Math.max(0, (quotaRemaining / Math.max(usageLimit || 1, 1)) * 100))}% , rgba(255,255,255,0.12) 0)` }} />
-            <span>{quotaRemaining === null ? "No cap" : `${quotaRemaining}`}</span>
+                    <div className="ai-chat-limit-badge" title={`${usageInputTokens.toLocaleString()} input tokens · ${usageOutputTokens.toLocaleString()} output tokens${usageCostUsd === null ? " · provider did not report cost" : " · cumulative provider-reported cost"}`}>
+                        <span className="ai-chat-usage-ring" style={{ background: quotaRemaining === null ? "conic-gradient(var(--text-muted) 0 100%)" : `conic-gradient(var(--accent) ${Math.min(100, Math.max(0, (quotaRemaining / Math.max(usageLimit || 1, 1)) * 100))}% , rgba(255,255,255,0.12) 0)` }} />
+                        <span>{usageUsed.toLocaleString()} tokens</span>
+                        {usageCostUsd !== null && <span className="ai-usage-cost">${usageCostUsd.toFixed(4)}</span>}
           </div>
           <button className="btn-icon" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }} title="AI Assistant Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -566,32 +599,6 @@ export default function AIChatPanel() {
       </div>
 
       <div className="ai-chat-input-area">
-        <div className="ai-chat-toolbar">
-          <div className="ai-chat-status-group">
-            <span className="ai-chat-status-pill active">{activeProfile ? "Connected" : usePuter ? "Puter" : "No key"}</span>
-            <span className="ai-chat-status-pill muted">{activeProfile ? `${activeProfile.model}` : "Ready"}</span>
-          </div>
-          <div className="ai-chat-action-group">
-            <button type="button" className="ai-chat-mini-btn" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }}>Provider</button>
-            <button type="button" className="ai-chat-mini-btn" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }}>Tools</button>
-            <button type="button" className="ai-chat-mini-btn primary" onClick={() => void approveAllPendingProposals()}>Allow all</button>
-          </div>
-        </div>
-        <div className="ai-approval-mode-row" aria-label="AI approval mode">
-          <span className="ai-approval-label">Default</span>
-          <div className="ai-approval-mode-group">
-            {(["ask", "allow", "deny"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`ai-approval-btn ${storedApprovalMode === mode ? "active" : ""}`}
-                onClick={() => updateAISettings({ approvalMode: mode })}
-              >
-                {mode === "ask" ? "Ask" : mode === "allow" ? "Allow" : "Deny"}
-              </button>
-            ))}
-          </div>
-        </div>
         {attachmentTargets.length > 0 && <div className="ai-attachment-chips" aria-label="Workspace items attached to this chat">
             <span className="ai-attachment-label">Attached</span>
             {attachmentTargets.map((target) => <span key={target.path} className="ai-attachment-chip" title={target.path}>{target.type === "folder" ? "Folder · " : ""}{target.path === "/" ? "Workspace" : target.name}<button type="button" onClick={() => removeAttachment(target.path)} aria-label={`Remove ${target.path}`}>×</button></span>)}
@@ -618,6 +625,39 @@ export default function AIChatPanel() {
             </button>
           </div>
         </div>
+                <div className="ai-chat-toolbar">
+                    <div className="ai-chat-action-group">
+                        <details className="ai-composer-menu">
+                            <summary className="ai-chat-mini-btn" title="Choose a saved provider and model">{activeProfile ? activeProfile.label : usePuter ? "Puter AI" : "Provider"}</summary>
+                            <div className="ai-composer-popover" role="menu" aria-label="AI provider and model">
+                                {profiles.map((profile) => <button key={profile.id} type="button" role="menuitemradio" aria-checked={profile.id === activeProfile?.id} onClick={(event) => { selectAIProfile(profile.id); event.currentTarget.closest("details")?.removeAttribute("open"); }}>
+                                    <strong>{profile.label}</strong><small>{providerLabel(profile.provider)} · {profile.model}</small>
+                                </button>)}
+                                {usePuter && <button type="button" role="menuitemradio" aria-checked="true" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); }}>Free Puter AI<small>Connected in this browser</small></button>}
+                                <button type="button" onClick={() => { setSettingsTab("ai"); setShowSettings(true); }}>Manage providers and models</button>
+                            </div>
+                        </details>
+                        <details className="ai-composer-menu">
+                            <summary className="ai-chat-mini-btn" title="Configure available AI actions">Tools</summary>
+                            <div className="ai-composer-popover ai-tool-popover" role="menu" aria-label="AI tools">
+                                {settings.ai.tools.map((tool) => <button key={tool.id} type="button" role="menuitemcheckbox" aria-checked={tool.enabled} onClick={() => updateAISettings({ tools: settings.ai.tools.map((item) => item.id === tool.id ? { ...item, enabled: !item.enabled } : item) })}>
+                                    <span className={`ai-tool-check ${tool.enabled ? "enabled" : ""}`}>{tool.enabled ? "✓" : ""}</span><span><strong>{tool.label}</strong><small>{tool.description}</small></span>
+                                </button>)}
+                            </div>
+                        </details>
+                        <details className="ai-composer-menu">
+                            <summary className="ai-chat-mini-btn" title="Set the default permission mode">{storedApprovalMode === "ask" ? "Ask" : storedApprovalMode === "allow" ? "Allow" : "Deny"}<span className="ai-mode-caret">▾</span></summary>
+                            <div className="ai-composer-popover ai-mode-popover" role="menu" aria-label="Default approval mode">
+                                {(["ask", "allow", "deny"] as const).map((mode) => <button key={mode} type="button" role="menuitemradio" aria-checked={storedApprovalMode === mode} onClick={(event) => { updateAISettings({ approvalMode: mode }); event.currentTarget.closest("details")?.removeAttribute("open"); }}>
+                                    <strong>{mode === "ask" ? "Ask" : mode === "allow" ? "Allow" : "Deny"}</strong>
+                                    <small>{mode === "ask" ? "Review each proposed action" : mode === "allow" ? "Auto-approve enabled tools" : "Never auto-approve actions"}</small>
+                                </button>)}
+                            </div>
+                        </details>
+                        {proposals.length > 0 && <button type="button" className="ai-chat-mini-btn primary" onClick={() => void approveAllPendingProposals()} title="Approve all currently pending actions">Allow pending · {proposals.length}</button>}
+                    </div>
+                    <span className="ai-composer-provider-state">{activeProfile ? `${providerLabel(activeProfile.provider)} · ${activeProfile.model}` : usePuter ? "Free Puter AI" : "No provider connected"}</span>
+                </div>
       </div>
     </div>);
 }

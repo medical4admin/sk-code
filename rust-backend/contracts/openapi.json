@@ -42,6 +42,75 @@
         }
       }
     },
+    "/workspaces/{workspace_id}/files": {
+      "get": {
+        "operationId": "listWorkspaceFiles",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "responses": {
+          "200": { "description": "Direct workspace files, excluding directories.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/WorkspaceFileInfo" } } } } },
+          "401": { "description": "Invalid workspace capability.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      },
+      "post": {
+        "operationId": "writeWorkspaceFile",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceFileRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Workspace file created or replaced.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceFileInfo" } } } },
+          "400": { "description": "Invalid path or file size.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+          "401": { "description": "Invalid workspace capability.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWorkspaceFile",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/WorkspaceId" },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+        ],
+        "responses": {
+          "204": { "description": "Workspace file deleted." },
+          "404": { "description": "Workspace file not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/workspaces/{workspace_id}/files/move": {
+      "post": {
+        "operationId": "moveWorkspaceFile",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceFileOperationRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Workspace file moved.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceFileInfo" } } } },
+          "400": { "description": "Invalid path or destination.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+          "404": { "description": "Workspace file not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/workspaces/{workspace_id}/code/run": {
+      "post": {
+        "operationId": "runWorkspaceCode",
+        "security": [{ "WorkspaceAccess": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CodeRunRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Code execution completed within the configured timeout.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CodeRunResult" } } } },
+          "400": { "description": "Unsupported language or request exceeds limits.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+          "500": { "description": "Workspace runtime execution failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
     "/workspaces/{workspace_id}/operations": {
       "post": {
         "operationId": "createOperation",
@@ -170,6 +239,56 @@
           "resources": { "$ref": "#/components/schemas/ResourceRequest" },
           "idempotency_key": { "type": ["string", "null"], "maxLength": 128 },
           "payload": { "type": "object", "description": "Kind-specific validated input; never an arbitrary shell command by itself." }
+        }
+      },
+      "WorkspaceFileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "content"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 4096, "description": "Relative path inside the workspace; absolute paths and parent traversal are rejected." },
+          "content": { "type": "string", "maxLength": 5242880 },
+          "encoding": { "type": "string", "enum": ["utf8"], "default": "utf8" }
+        }
+      },
+      "WorkspaceFileOperationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "target_path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "content": { "type": "string", "maxLength": 5242880 },
+          "encoding": { "type": "string", "enum": ["utf8"] }
+        }
+      },
+      "WorkspaceFileInfo": {
+        "type": "object",
+        "required": ["path", "size", "file_type"],
+        "properties": {
+          "path": { "type": "string" },
+          "size": { "type": "integer", "format": "int64", "minimum": 0 },
+          "file_type": { "type": "string", "enum": ["file"] }
+        }
+      },
+      "CodeRunRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["language", "code"],
+        "properties": {
+          "language": { "type": "string", "enum": ["python", "py", "javascript", "js", "node", "nodejs", "mjs", "cjs", "typescript", "ts", "tsx", "bash", "shell", "java", "c", "cpp", "cxx", "cc", "csharp", "cs", "kotlin", "kt", "kts", "rust", "rs", "go", "php", "ruby", "rb"] },
+          "code": { "type": "string", "maxLength": 3145728 },
+          "stdin": { "type": "string", "maxLength": 65536 }
+        }
+      },
+      "CodeRunResult": {
+        "type": "object",
+        "required": ["stdout", "stderr", "exit_code", "execution_time_ms"],
+        "properties": {
+          "stdout": { "type": "string" },
+          "stderr": { "type": "string" },
+          "exit_code": { "type": "integer" },
+          "execution_time_ms": { "type": "integer", "format": "int64" }
         }
       },
       "OperationRecord": {

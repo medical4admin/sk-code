@@ -136,6 +136,46 @@ pub struct CreateOperationRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileRequest {
+    pub path: String,
+    pub content: String,
+    pub encoding: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileOperationRequest {
+    pub path: String,
+    pub target_path: Option<String>,
+    pub content: Option<String>,
+    pub encoding: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceFileInfo {
+    pub path: String,
+    pub size: u64,
+    pub file_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodeRunRequest {
+    pub language: String,
+    pub code: String,
+    pub stdin: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeRunResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+    pub execution_time_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationRecord {
     pub schema_version: u16,
     pub operation_id: String,
