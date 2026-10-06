@@ -189,7 +189,7 @@ export async function launchGuiSession(id: string, deviceId: string, workspaceAc
     if (started.exitCode !== 0)
         throw new Error(started.stderr || "The GUI runtime could not start.");
     const port = await awaitGuiPort(containerName);
-    if (!Number.isSafeInteger(port) || port <= 0) {
+    if (port === null || !Number.isSafeInteger(port) || port <= 0) {
         const logs = await run("docker", ["logs", "--tail", "200", containerName], 10000);
         await run("docker", ["rm", "-f", containerName], 10000);
         throw new Error(logs.stdout || logs.stderr || "The GUI runtime did not expose a local display port.");

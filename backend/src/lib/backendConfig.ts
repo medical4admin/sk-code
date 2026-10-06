@@ -7,6 +7,7 @@ export const WORKSPACE_ROOT = resolve(process.env["WORKSPACE_ROOT"] || "./worksp
 export const WORKSPACE_METADATA_PATH = resolve(process.env["WORKSPACE_METADATA_PATH"] || `${WORKSPACE_ROOT}/.registry/workspaces.json`);
 export const OPERATION_METADATA_PATH = resolve(process.env["OPERATION_METADATA_PATH"] || `${WORKSPACE_ROOT}/.registry/operations.json`);
 export const CAPACITY_LEDGER_PATH = resolve(process.env["CAPACITY_LEDGER_PATH"] || `${WORKSPACE_ROOT}/.registry/capacity.json`);
+export const SCRIPT_METADATA_PATH = resolve(process.env["SCRIPT_METADATA_PATH"] || `${WORKSPACE_ROOT}/.registry/scripts.json`);
 const backendInstanceId = process.env["BACKEND_INSTANCE_ID"]?.trim() || "sk-coder";
 export const BACKEND_INSTANCE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/.test(backendInstanceId) ? backendInstanceId : "sk-coder";
 export const RUNTIME_IMAGE = process.env["RUNTIME_IMAGE"] || "sk-coder-runtime:latest";
