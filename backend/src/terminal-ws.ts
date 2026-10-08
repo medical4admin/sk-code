@@ -6,8 +6,8 @@ import { OUTPUT_MAX_BYTES } from "./lib/backendConfig.js";
 import { limitTerminalChunk, parseTerminalChunk } from "./lib/outputLimit.js";
 import { terminalAccessTokenFromProtocolHeader } from "./lib/terminalAccess.js";
 
-const terminalDisconnectLingerMs = 10 * 60 * 1000;
 const terminalReplayBufferSize = 20000;
+const terminalReplayBufferRetentionMs = 10 * 60 * 1000;
 const terminalReplayBuffers = new Map<string, { buffer: string[]; timer: NodeJS.Timeout | null }>();
 
 function replayKey(sessionId: string, terminalId: string) {
@@ -75,16 +75,22 @@ export function setupTerminalWs(server: Server) {
                 catch { }
             };
             ws.on("message", handleMessage);
+            const keepAlive = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN)
+                    ws.ping();
+            }, 30_000);
             ws.on("close", () => {
                 closed = true;
-                if (!terminal)
-                    return;
+                clearInterval(keepAlive);
                 if (replayState.timer)
                     clearTimeout(replayState.timer);
+                terminal?.detach();
                 replayState.timer = setTimeout(() => {
-                    terminal?.detach();
                     terminalReplayBuffers.delete(terminalReplayKey);
-                }, terminalDisconnectLingerMs);
+                }, terminalReplayBufferRetentionMs);
+            });
+            ws.on("error", () => {
+                clearInterval(keepAlive);
             });
             const session = await getWorkspaceSession(requestedSessionId);
             terminal = await openInteractiveTerminal(session.id, (data) => {
@@ -109,6 +115,8 @@ export function setupTerminalWs(server: Server) {
                 }
             }, (data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "stderr", data })), (code) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "exit", code, cwd })), undefined, terminalId);
             if (closed) {
+                clearInterval(keepAlive);
+                terminal.detach();
                 return;
             }
             const replay = replayState.buffer.join("");

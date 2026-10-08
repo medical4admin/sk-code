@@ -33,11 +33,14 @@ describe("appendLimitedOutput", () => {
         expect(durableTerminalSessionName("")).toBe("sk-shell");
     });
 
-    it("stores shell history in the owned workspace before reporting the next prompt", () => {
+    it("restores and persists shell history before the first prompt", () => {
         const command = terminalBootstrapCommand();
         expect(command).toContain("HISTFILE=/workspace/.skcoder-terminal-history");
-        expect(command).toContain("history -a");
+        expect(command).toContain("HISTSIZE=1000");
+        expect(command).toContain("HISTFILESIZE=1000");
         expect(command).toContain("history -r");
+        expect(command).toContain("PROMPT_COMMAND='history -a; printf \"__SK_CODER_CWD__%s\\n\" \"$PWD\"'");
+        expect(command).toContain("exec bash --noprofile --norc -i");
     });
 
     it("creates one safe deterministic runner volume identity per workspace lease", () => {

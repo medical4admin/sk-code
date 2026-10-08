@@ -651,6 +651,7 @@ export default function MultiTerminal() {
                     return;
                 terminalSocketsRef.current.delete(tabId);
                 connectingTabsRef.current.delete(tabId);
+                addLine(tabId, "error", `Terminal connection failed: ${message}`);
                 if (/workspace access is not valid|invalid.*workspace.*(access|session)|unauthorized|forbidden|401|403/i.test(message)) {
                     setWorkspaceConnection("auth");
                     recoverShell(tabId);
