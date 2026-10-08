@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import {
     createScript,
@@ -9,18 +8,14 @@ import {
     updateScript,
     type ScriptEntry,
 } from "../lib/scriptRegistry.js";
+import { isAuthorizedAdminRequest } from "../lib/adminAuth.js";
 
 const router = Router();
-
-function isAuthorized(value: unknown) {
-    const expected = process.env["ADMIN_DASHBOARD_TOKEN"];
-    return Boolean(expected && typeof value === "string" && value.length === expected.length && timingSafeEqual(Buffer.from(value), Buffer.from(expected)));
-}
 
 function requireAdmin(req: any, res: any, next: any) {
     if (!process.env["ADMIN_DASHBOARD_TOKEN"])
         return res.status(404).json({ error: "Administrator dashboard is not configured." });
-    if (!isAuthorized(req.header("x-sk-admin-token")))
+    if (!isAuthorizedAdminRequest(req))
         return res.status(401).json({ error: "Administrator authorization required." });
     next();
 }

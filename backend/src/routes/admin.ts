@@ -4,19 +4,12 @@ import { getWorkspaceLifecycle, scheduleWorkspaceDeletion, workspaceStatus } fro
 import { listWorkspaceRecords } from "../lib/workspaceRegistry.js";
 import { listRuntimeOperations } from "../lib/operationRegistry.js";
 import { collectOperationalMetrics } from "../lib/operationalMetrics.js";
+import { isAuthorizedAdminRequest } from "../lib/adminAuth.js";
 const router = Router();
-function isAuthorized(value: unknown) {
-    const expected = process.env["ADMIN_DASHBOARD_TOKEN"];
-    if (!expected || typeof value !== "string")
-        return false;
-    const left = Buffer.from(value);
-    const right = Buffer.from(expected);
-    return left.length === right.length && timingSafeEqual(left, right);
-}
 router.use((req, res, next) => {
     if (!process.env["ADMIN_DASHBOARD_TOKEN"])
         return res.status(404).json({ error: "Administrator dashboard is not configured." });
-    if (!isAuthorized(req.header("x-sk-admin-token")))
+    if (!isAuthorizedAdminRequest(req))
         return res.status(401).json({ error: "Administrator authorization required." });
     next();
 });

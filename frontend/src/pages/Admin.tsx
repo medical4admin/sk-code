@@ -49,14 +49,12 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 }
 
 export default function AdminPage() {
-    const [token, setToken] = useState("");
     const [summary, setSummary] = useState<Summary | null>(null);
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-    const headers = { "X-SK-Admin-Token": token };
+    const headers: Record<string, string> = {};
     async function load() {
-        if (!token) return;
         setLoading(true);
         setError("");
         try {
@@ -71,7 +69,7 @@ export default function AdminPage() {
         catch (reason) {
             setSummary(null);
             setWorkspaces([]);
-            setError(reason instanceof Error ? reason.message : "Administrator data could not be loaded.");
+            setError(reason instanceof Error ? reason.message : "Administrator authentication is required.");
         }
         finally { setLoading(false); }
     }
@@ -86,12 +84,11 @@ export default function AdminPage() {
         }
         await load();
     }
-    useEffect(() => { if (token) void load(); }, [token]);
-    if (!token) return <main className="info-page"><header className="info-header"><h1>Administrator Dashboard</h1><p>Enter the owner dashboard token to view live operational metrics.</p></header><section className="info-section" style={{ maxWidth: 520 }}><div style={{ display: "grid", gap: 10 }}><label htmlFor="owner-dashboard-token">Dashboard token</label><input id="owner-dashboard-token" className="input" type="password" autoComplete="current-password" value={token} onChange={(event) => setToken(event.target.value)} /><button className="btn btn-primary" onClick={() => void load()} disabled={!token}>Open dashboard</button></div></section></main>;
+    useEffect(() => { void load(); }, []);
     const pool = summary?.operational.sharedPool;
     const host = summary?.operational.host;
     const history = summary?.operational.history || [];
-    return <main className="info-page"><header className="info-header"><h1>Administrator Dashboard</h1><p>Owner-only capacity, queue, cleanup, and health data. Project contents, terminal text, chats, and credentials are not displayed.</p></header><section className="info-section"><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-primary" onClick={() => void load()} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button><a className="btn btn-ghost" href="/admin/scripts">Manage scripts</a><button className="btn btn-ghost" onClick={() => { setToken(""); setSummary(null); setWorkspaces([]); }}>Lock dashboard</button></div>{error && <p style={{ color: "var(--red)", marginTop: 12 }}>{error}</p>}</section>{summary && pool && host && <>
+    return <main className="info-page"><header className="info-header"><h1>Administrator Dashboard</h1><p>Owner-only capacity, queue, cleanup, and health data. Project contents, terminal text, chats, and credentials are not displayed.</p></header><section className="info-section"><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-primary" onClick={() => void load()} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button><a className="btn btn-ghost" href="/admin/scripts">Manage scripts</a></div>{error && <p style={{ color: "var(--red)", marginTop: 12 }}>{error}</p>}</section>{summary && pool && host && <>
       <section className="info-section"><h2>Shared server workspace pool</h2><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}><Ring label="Reserved shared capacity" value={pool.reservedBytes} total={pool.maximumBytes} tone="var(--accent)" /><Ring label="Measured active data" value={pool.actualBytes} total={pool.maximumBytes} tone="var(--green)" /><Ring label="Normal new-work admission" value={pool.reservedBytes} total={pool.admissionBytes} tone="var(--yellow)" /></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginTop: 12 }}><MetricCard label="New work available" value={formatBytes(pool.availableAdmissionBytes)} /><MetricCard label="Existing-work extension" value={formatBytes(pool.availableExtensionBytes)} /><MetricCard label="Active reservations" value={String(pool.activeReservations)} /><MetricCard label="Release failures" value={String(pool.releaseFailures)} /></div></section>
       <section className="info-section"><h2>Host pressure and execution queue</h2><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}><Ring label="Host disk used" value={host.disk.usedBytes} total={host.disk.totalBytes} tone="var(--orange)" /><Ring label="Host memory used" value={host.memory.usedBytes} total={host.memory.totalBytes} tone="var(--purple)" /><MetricCard label="Runner queue" value={`${summary.runnerQueue.active} active · ${summary.runnerQueue.queued} waiting`} /><MetricCard label="CPU load" value={`${host.cpu.load1.toFixed(2)} on ${host.cpu.logicalCpus} logical CPUs`} /></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 14 }}><div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: "var(--radius)" }}><div style={{ fontSize: 12, color: "var(--text-muted)" }}>Shared-pool reservation history</div><Bars values={history.map((entry) => entry.reservedBytes)} color="var(--accent)" /></div><div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: "var(--radius)" }}><div style={{ fontSize: 12, color: "var(--text-muted)" }}>Host memory history</div><Bars values={history.map((entry) => entry.memoryUsedBytes)} color="var(--purple)" /></div></div></section>
       <section className="info-section"><h2>Cleanup and resource classes</h2><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}><MetricCard label="Active operations" value={String(summary.operational.operations.active)} /><MetricCard label="Expired awaiting cleanup" value={String(summary.operational.operations.expired)} /><MetricCard label="Cleanup failures" value={String(summary.operational.operations.cleanupFailed)} /><MetricCard label="Scheduled workspace cleanup" value={String(summary.workspaces.scheduledDelete)} /></div><div style={{ overflowX: "auto", marginTop: 14 }}><table className="info-table"><thead><tr><th>Resource class</th><th>Reservations</th><th>Reserved</th><th>Measured</th></tr></thead><tbody>{pool.byKind.map((entry) => <tr key={entry.kind}><td>{entry.kind}</td><td>{entry.active}</td><td>{formatBytes(entry.reservedBytes)}</td><td>{formatBytes(entry.actualBytes)}</td></tr>)}</tbody></table></div></section>

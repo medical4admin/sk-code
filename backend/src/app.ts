@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { isAllowedOrigin } from "./lib/originPolicy";
+import { getDeviceIdFromRequest, isValidDeviceId } from "./lib/deviceIdentity";
 const app: Express = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.disable("x-powered-by");
@@ -47,10 +48,9 @@ app.use((req: any, res: Response, next: NextFunction) => {
         next();
         return;
     }
-    const deviceId = req.headers["x-device-id"];
-    const isValid = typeof deviceId === "string" && deviceId.length >= 8 && /^[a-zA-Z0-9-]{8,64}$/.test(deviceId);
-    if (!isValid) {
-        res.status(401).json({ error: "Device identity is required." });
+    const deviceId = getDeviceIdFromRequest(req.headers);
+    if (deviceId !== undefined && !isValidDeviceId(deviceId)) {
+        res.status(401).json({ error: "Device identity is invalid." });
         return;
     }
     req.deviceId = deviceId;

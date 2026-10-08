@@ -18,14 +18,8 @@ export function routeMatchesScript(script: Pick<PublicScript, "scope" | "route">
     return Boolean(route && (pathname === route || pathname.startsWith(`${route}/`)));
 }
 
-function getDeviceId(): string {
-    return localStorage.getItem("sk-device-id") || "anonymous";
-}
-
 export async function loadSiteScripts(pathname: string): Promise<void> {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || "/api"}/scripts/public?path=${encodeURIComponent(pathname)}`, {
-        headers: { "X-Device-Id": getDeviceId() },
-    });
+    const response = await fetch(`${import.meta.env.VITE_API_URL || "/api"}/scripts/public?path=${encodeURIComponent(pathname)}`);
     if (!response.ok)
         return;
     const body = await response.json() as { scripts: PublicScript[] };
